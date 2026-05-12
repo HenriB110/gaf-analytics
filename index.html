@@ -543,6 +543,7 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
   transition: opacity .3s ease;
 }
 #sidebar-overlay.visible {
+  display: block;   /* JS gère display, CSS gère l'opacité */
   opacity: 1;
 }
 
@@ -1108,7 +1109,7 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
      MAIN
 ═══════════════════════════════════════════════════════════ -->
 <!-- Overlay pour fermer la sidebar sur mobile (tap en dehors) -->
-<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+<div id="sidebar-overlay" onclick="closeMobileMenu()"></div>
 
 <div id="main">
   <!-- TOPBAR -->
@@ -8943,43 +8944,6 @@ async function init() {
     navigate('home');
   });
 
-  // Mobile menu
-  /* ── Sidebar mobile ────────────────────────────────────── */
-  const sidebar  = document.getElementById('sidebar');
-  const overlay  = document.getElementById('sidebar-overlay');
-  const menuBtn  = document.getElementById('menu-toggle');
-
-  function openSidebar() {
-    sidebar.classList.add('open');
-    if (overlay) { overlay.style.display = 'block'; requestAnimationFrame(() => overlay.classList.add('visible')); }
-    document.body.style.overflow = 'hidden';
-  }
-  function closeSidebar() {
-    sidebar.classList.remove('open');
-    if (overlay) {
-      overlay.classList.remove('visible');
-      setTimeout(() => { overlay.style.display = 'none'; }, 300);
-    }
-    document.body.style.overflow = '';
-  }
-  // Exposer au scope global pour les onclick inline
-  window.openSidebar  = openSidebar;
-  window.closeSidebar = closeSidebar;
-
-  if (menuBtn) menuBtn.addEventListener('click', () => {
-    sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
-  });
-
-  // Fermer la sidebar quand on clique sur un élément de navigation
-  document.querySelectorAll('.nav-item[data-page]').forEach(item => {
-    item.addEventListener('click', () => {
-      if (window.innerWidth <= 1024) closeSidebar();
-    });
-  });
-  document.getElementById('main').addEventListener('click', () => {
-    if (window.innerWidth <= 1024 && sidebar?.classList.contains('open')) closeSidebar();
-  });
-
   // Modal
   document.getElementById('modal-close').addEventListener('click', closeModal);
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
@@ -9039,9 +9003,89 @@ async function fetchAndLoadFlipsalto(url, groupe, saison) {
   }
 }
 
+/* ================================================================
+   MENU MOBILE — initMobileMenu()
+   Appelé en premier dans DOMContentLoaded, de manière synchrone
+   et indépendante de init() / startApp() / loadData().
+   Garantit que le bouton ☰ fonctionne dès le chargement.
+================================================================ */
+function initMobileMenu() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  const menuBtn = document.getElementById('menu-toggle');
+
+  if (!sidebar || !menuBtn) {
+    console.warn('[MobileMenu] Éléments introuvables — réessai dans 100ms');
+    setTimeout(initMobileMenu, 100);
+    return;
+  }
+
+  function openMobileMenu() {
+    sidebar.classList.add('open');
+    if (overlay) {
+      overlay.style.display = 'block';
+      // rAF pour que le display:block soit peint avant la transition opacity
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => overlay.classList.add('visible'));
+      });
+    }
+    document.body.style.overflow = 'hidden';
+    menuBtn.setAttribute('aria-expanded', 'true');
+    menuBtn.textContent = '✕';
+  }
+
+  function closeMobileMenu() {
+    sidebar.classList.remove('open');
+    if (overlay) {
+      overlay.classList.remove('visible');
+      // Attendre la fin de la transition CSS (300ms) avant display:none
+      setTimeout(() => { overlay.style.display = 'none'; }, 310);
+    }
+    document.body.style.overflow = '';
+    menuBtn.setAttribute('aria-expanded', 'false');
+    menuBtn.textContent = '☰';
+  }
+
+  // Exposer globalement pour les onclick="closeMobileMenu()" inline
+  window.openMobileMenu  = openMobileMenu;
+  window.closeMobileMenu = closeMobileMenu;
+  // Alias pour la compatibilité avec le code existant
+  window.openSidebar  = openMobileMenu;
+  window.closeSidebar = closeMobileMenu;
+
+  // Bouton hamburger
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    sidebar.classList.contains('open') ? closeMobileMenu() : openMobileMenu();
+  });
+
+  // Tap sur l'overlay → fermer
+  if (overlay) {
+    overlay.addEventListener('click', closeMobileMenu);
+    // Remplacer l'onclick inline par l'event listener (plus fiable)
+    overlay.removeAttribute('onclick');
+  }
+
+  // Tap sur un nav-item → fermer la sidebar (mobile seulement)
+  sidebar.addEventListener('click', (e) => {
+    const navItem = e.target.closest('.nav-item[data-page]');
+    if (navItem && window.innerWidth <= 1024) {
+      setTimeout(closeMobileMenu, 150); // petit délai pour que la navigation se déclenche d'abord
+    }
+  });
+
+  // Touche Escape → fermer
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && sidebar.classList.contains('open')) closeMobileMenu();
+  });
+
+  console.log('[MobileMenu] Initialisé ✅');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-    init();          // garde l'ancien init
-    startApp();      // ← AJOUT IMPORTANT
+    initMobileMenu(); // ← en premier, synchrone, indépendant du reste
+    init();           // garde l'ancien init (async)
+    startApp();       // Supabase ou SQLite
 });
 
 /* ================================================================
