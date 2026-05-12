@@ -880,6 +880,27 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
     .login-version { text-align:center;margin-top:18px;font-size:11px;color:#bbb; }
     @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
 
+    /* ── Page déconnexion ──────────────────────────────────── */
+    #logout-screen {
+      display:none; position:fixed; inset:0; z-index:10000;
+      background:linear-gradient(145deg,#001433 0%,#002b6b 45%,#004fa0 100%);
+      align-items:center; justify-content:center;
+    }
+    #logout-screen.visible { display:flex; animation:fadeIn .4s ease; }
+    .logout-card {
+      background:#fff; border-radius:20px; padding:48px 52px;
+      text-align:center; max-width:380px; width:90%;
+      box-shadow:0 32px 80px rgba(0,0,30,.5); animation:fadeIn .5s ease;
+    }
+    .logout-icon  { font-size:56px; margin-bottom:16px; }
+    .logout-title { font-size:20px; font-weight:800; color:#002b5c; margin-bottom:8px; }
+    .logout-sub   { font-size:13px; color:#888; }
+    .logout-bar   { margin-top:20px; height:3px; background:#eee; border-radius:2px; overflow:hidden; }
+    .logout-bar-fill {
+      height:100%; width:0%; background:linear-gradient(90deg,#004fa0,#0066cc);
+      border-radius:2px; transition:width 2.5s linear;
+    }
+
     .role-badge {
       display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;
       font-weight:700;text-transform:uppercase;letter-spacing:.5px;
@@ -948,6 +969,19 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
 <!-- ═══════════════════════════════════════════════════════════
      SIDEBAR
 ═══════════════════════════════════════════════════════════ -->
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ÉCRAN DE DÉCONNEXION (2,5s avant retour login)
+  ═══════════════════════════════════════════════════════════ -->
+  <div id="logout-screen">
+    <div class="logout-card">
+      <div class="logout-icon">🚪</div>
+      <div class="logout-title">Déconnexion réussie</div>
+      <div class="logout-sub">Redirection vers la page de connexion…</div>
+      <div class="logout-bar"><div id="logout-bar-fill" class="logout-bar-fill"></div></div>
+    </div>
+  </div>
+
 <nav id="sidebar">
   <div class="sidebar-logo">
     <div class="sidebar-logo-badge">
@@ -1009,11 +1043,11 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
   <div class="nav-item" data-page="analyses_club">
     <span class="nav-icon">🏠</span> Analyses Club
   </div>
-  <div class="nav-item" data-page="historique">
+  <div class="nav-item" id="nav-historique" data-page="historique">
     <span class="nav-icon">🗂</span> Historique Imports
     <span class="nav-badge" id="nav-history-count">0</span>
   </div>
-  <div class="nav-item" data-page="export_bdd">
+  <div class="nav-item" id="nav-export-bdd" data-page="export_bdd">
     <span class="nav-icon">💾</span> Export BDD
   </div>
   <!-- Migration SQLite → Supabase — visible uniquement Admin + mode Supabase -->
@@ -1056,7 +1090,7 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
       <span id="storage-used" style="font-size:10px;color:rgba(255,255,255,.45)">—</span>
       <span id="storage-free" style="font-size:10px;color:rgba(255,255,255,.45)">—</span>
     </div>
-    <div style="display:flex;gap:4px">
+    <div id="sqlite-storage-btns" style="display:flex;gap:4px">
       <button onclick="openDBFile()" title="Charger ufolep_gaf.db"
         style="flex:1;background:rgba(255,255,255,.12);border:none;border-radius:5px;color:#fff;font-size:10px;padding:5px 3px;cursor:pointer">📂 Charger</button>
       <button onclick="saveDBNow()" title="Sauvegarder la base SQLite sur disque"
@@ -1096,6 +1130,16 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
     <span class="nav-icon">👥</span> Gestion utilisateurs
   </div>
 
+  <!-- Version + À propos -->
+  <div style="padding:6px 14px 4px;text-align:center">
+    <button id="sidebar-version-btn" onclick="showAbout()"
+      style="background:none;border:none;color:rgba(255,255,255,.35);
+        font-size:10px;cursor:pointer;padding:4px 8px;border-radius:4px;
+        transition:color .2s" onmouseover="this.style.color='rgba(255,255,255,.7)'"
+      onmouseout="this.style.color='rgba(255,255,255,.35)'">
+      v— · À propos
+    </button>
+  </div>
   <div class="sidebar-footer">
     <button class="theme-toggle" id="theme-toggle">🌙 Mode sombre</button>
     <!-- Bouton suppression (admin uniquement) -->
@@ -7989,6 +8033,236 @@ function copyUsersSql() {
     .catch(() => toast('Impossible de copier (utilisez la souris)', 'error'));
 }
 
+/* ── Modal "À propos" ────────────────────────────────────── */
+function showAbout() {
+  const modal       = document.getElementById('modal-import');
+  const modalTitle  = document.querySelector('#modal-import .modal-header h2');
+  const modalBody   = document.querySelector('#modal-import .modal-body');
+  const modalFooter = document.querySelector('#modal-import .modal-footer');
+  if (!modal || !modalTitle || !modalBody || !modalFooter) return;
+
+  modalTitle.textContent = 'À propos';
+
+  modalBody.innerHTML = `
+    <div style="padding:4px 0 8px">
+
+      <!-- En-tête logo -->
+      <div style="text-align:center;padding:16px 0 20px;border-bottom:1px solid var(--c-border);margin-bottom:20px">
+        <div style="font-size:42px;margin-bottom:10px">⚽🤸</div>
+        <div style="font-size:20px;font-weight:900;color:var(--c-blue);letter-spacing:-.3px">UFOLEP GAF Analytics</div>
+        <div style="font-size:12px;color:var(--c-text3);margin-top:4px">Application d'analyse des résultats de Gymnastique</div>
+      </div>
+
+      <!-- Cartes version + date -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
+        <div style="background:var(--c-blue);color:#fff;border-radius:10px;padding:14px 16px;text-align:center">
+          <div style="font-size:10px;opacity:.7;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">Version</div>
+          <div style="font-size:22px;font-weight:900;letter-spacing:-0.5px">${APP_VERSION}</div>
+        </div>
+        <div style="background:var(--c-surface2);border:1px solid var(--c-border);border-radius:10px;padding:14px 16px;text-align:center">
+          <div style="font-size:10px;color:var(--c-text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">Date</div>
+          <div style="font-size:15px;font-weight:700;color:var(--c-text)">12 mai 2026</div>
+        </div>
+      </div>
+
+      <!-- Changelog -->
+      <div style="margin-bottom:8px">
+        <div style="font-size:13px;font-weight:700;color:var(--c-text);margin-bottom:12px;display:flex;align-items:center;gap:8px">
+          <span style="font-size:16px">📋</span> Changelog
+        </div>
+
+        ${[
+          {
+            ver: '1.0.2', date: '12 mai 2026', current: true,
+            items: [
+              'Amélioration de la modal "À propos" avec changelog détaillé',
+              'Affichage dynamique de la version dans la sidebar',
+              'Page de déconnexion animée (2,5s)',
+              'Tri cliquable dans la gestion des utilisateurs',
+              'Restrictions renforcées pour le rôle Lecteur',
+            ]
+          },
+          {
+            ver: '1.0.1', date: '12 mai 2026', current: false,
+            items: [
+              'Gestion des rôles (admin / coach / lecteur)',
+              'Intégration Supabase avec migration SQLite',
+              'Interface mobile responsive (iOS / Android)',
+              'Gestion des utilisateurs',
+              'Page de déconnexion animée',
+            ]
+          },
+          {
+            ver: '1.0.0', date: '10 mai 2026', current: false,
+            items: [
+              'Première version publique',
+              'Import depuis Flipsalto + tableaux dynamiques',
+              'Analyses globales et fiches gymnastes',
+            ]
+          }
+        ].map(({ ver, date, current, items }) => `
+          <div style="margin-bottom:14px;padding:12px 14px;border-radius:8px;
+            border-left:3px solid ${current ? 'var(--c-blue)' : 'var(--c-border)'};
+            background:${current ? 'var(--c-blue-light,rgba(0,79,160,.06))' : 'var(--c-surface2)'}">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+              <span style="font-size:13px;font-weight:800;color:${current ? 'var(--c-blue)' : 'var(--c-text)'}"
+                >v${ver}</span>
+              <span style="font-size:11px;color:var(--c-text3)">— ${date}</span>
+              ${current ? '<span style="background:var(--c-blue);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;letter-spacing:.3px">ACTUELLE</span>' : ''}
+            </div>
+            <ul style="margin:0;padding-left:16px;list-style:disc">
+              ${items.map(i => `<li style="font-size:12px;color:var(--c-text2);line-height:1.7">${i}</li>`).join('')}
+            </ul>
+          </div>`
+        ).join('')}
+      </div>
+
+      <!-- Pied de page -->
+      <div style="text-align:center;padding-top:12px;border-top:1px solid var(--c-border);
+        font-size:11px;color:var(--c-text3)">
+        UFOLEP — Union Française des Œuvres Laïques d'Éducation Physique
+      </div>
+    </div>`;
+
+  /* Remplacer le footer par un seul bouton Fermer */
+  modalFooter.innerHTML = `
+    <button class="btn btn-primary" onclick="closeModal()" style="min-width:120px">Fermer</button>`;
+
+  modal.classList.add('open');
+
+  /* Restaurer footer import quand la modal se ferme */
+  function restoreImportFooter() {
+    if (modal.classList.contains('open')) return;
+    modal.removeEventListener('transitionend', restoreImportFooter);
+    modalTitle.textContent = 'Importer des données';
+    modalFooter.innerHTML = `
+      <button class="btn btn-outline" id="modal-cancel">Annuler</button>
+      <button class="btn btn-primary" id="btn-do-import">Importer</button>`;
+    document.getElementById('modal-cancel')?.addEventListener('click', closeModal);
+    document.getElementById('btn-do-import')?.addEventListener('click', () => {
+      const tab = document.querySelector('#modal-import .tab-btn.active')?.dataset.tab;
+      if (tab === 'tab-csv') importCSV();
+      else if (tab === 'tab-json') importJSON();
+    });
+  }
+  modal.addEventListener('transitionend', restoreImportFooter);
+}
+
+/* ── État tri tableau utilisateurs ──────────────────────── */
+let _usersSortCol = 'email';
+let _usersSortDir = 'asc';
+let _usersData    = [];   // cache pour le tri sans re-fetch
+
+function sortUsersTable(col) {
+  if (_usersSortCol === col) {
+    _usersSortDir = _usersSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _usersSortCol = col;
+    _usersSortDir = 'asc';
+  }
+  renderUsersTable(_usersData);
+}
+
+function renderUsersTable(users) {
+  _usersData = users;
+  const wrap = document.getElementById('users-list-wrap');
+  if (!wrap || !users.length) return;
+
+  // Tri
+  const dir  = _usersSortDir === 'asc' ? 1 : -1;
+  const sorted = [...users].sort((a, b) => {
+    const va = (a[_usersSortCol] || '').toString().toLowerCase();
+    const vb = (b[_usersSortCol] || '').toString().toLowerCase();
+    return dir * va.localeCompare(vb);
+  });
+
+  const arrow = col => {
+    if (col !== _usersSortCol) return '<span style="opacity:.3">⇅</span>';
+    return _usersSortDir === 'asc' ? '↑' : '↓';
+  };
+  const thStyle = 'cursor:pointer;user-select:none;white-space:nowrap';
+
+  const fmt     = d => d ? new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' }) : '—';
+  const fmtTime = d => d ? new Date(d).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : 'Jamais';
+  const roleColor = { admin:'#c00', coach:'#004fa0', lecteur:'#666' };
+
+  const rows = sorted.map(u => {
+    const roleVal   = u.role || 'lecteur';
+    const emailSafe = (u.email || '').replace(/'/g, "\\'");
+    return `<tr>
+      <td style="font-size:13px;font-weight:600">${u.email || '(email inconnu)'}</td>
+      <td>
+        <select onchange="changeUserRole('${u.id}',this.value,'${emailSafe}')"
+          style="padding:5px 8px;border-radius:6px;border:1.5px solid var(--c-border);
+                 background:var(--c-surface2);color:${roleColor[roleVal]||'#333'};
+                 font-size:12px;font-weight:700;cursor:pointer">
+          <option value="admin"   ${roleVal==='admin'  ?'selected':''}>👑 Admin</option>
+          <option value="coach"   ${roleVal==='coach'  ?'selected':''}>🤸 Coach</option>
+          <option value="lecteur" ${roleVal==='lecteur'?'selected':''}>👁 Lecteur</option>
+        </select>
+      </td>
+      <td style="font-size:11px;color:var(--c-text2)">${fmt(u.created_at)}</td>
+      <td style="font-size:11px;color:var(--c-text3)">${fmtTime(u.last_sign)}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="resetUserPassword('${emailSafe}')"
+          title="Envoyer un email de réinitialisation">📧 Reset MDP</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const usedRpc     = !document.getElementById('users-sql-hint') || document.getElementById('users-sql-hint').style.display === 'none';
+  const methodBadge = usedRpc
+    ? `<span style="font-size:10px;background:#e8f4ff;color:#004fa0;padding:2px 7px;border-radius:8px;margin-left:8px">✓ Via RPC</span>`
+    : `<span style="font-size:10px;background:#fff3cd;color:#856404;padding:2px 7px;border-radius:8px;margin-left:8px">⚠ Via profiles</span>`;
+
+  // Garder uniquement le tableau — remplacer le tbody si la structure existe
+  const tbody = wrap.querySelector('tbody');
+  if (tbody) {
+    tbody.innerHTML = rows;
+    // Mettre à jour les flèches
+    wrap.querySelectorAll('th[data-sort]').forEach(th => {
+      const col = th.dataset.sort;
+      th.innerHTML = th.dataset.label + ' ' + arrow(col);
+    });
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap;gap:8px">
+        <span>👥</span>
+        <h2>${users.length} utilisateur${users.length > 1 ? 's' : ''}</h2>
+        ${methodBadge}
+        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="loadUsersList()">🔄 Actualiser</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th data-sort="email"      data-label="Email"              style="${thStyle}" onclick="sortUsersTable('email')">Email ${arrow('email')}</th>
+            <th data-sort="role"       data-label="Rôle"               style="${thStyle}" onclick="sortUsersTable('role')">Rôle ${arrow('role')}</th>
+            <th data-sort="created_at" data-label="Créé le"            style="${thStyle}" onclick="sortUsersTable('created_at')">Créé le ${arrow('created_at')}</th>
+            <th data-sort="last_sign"  data-label="Dernière connexion" style="${thStyle}" onclick="sortUsersTable('last_sign')">Dernière connexion ${arrow('last_sign')}</th>
+            <th>Actions</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-body" style="padding:16px">
+        <h3 style="font-size:14px;margin-bottom:10px">➕ Créer un nouvel utilisateur</h3>
+        <div style="font-size:13px;color:var(--c-text2);margin-bottom:8px">
+          <strong>Étape 1</strong> — Dans <a href="https://supabase.com/dashboard" target="_blank" style="color:var(--c-blue)">Supabase Dashboard → Authentication → Users → Add user</a>
+        </div>
+        <strong style="font-size:13px">Étape 2</strong> — Attribuer un rôle (SQL Editor) :
+        <pre style="background:var(--c-surface2);padding:8px;border-radius:5px;font-size:11px;margin-top:6px;overflow-x:auto">INSERT INTO public.profiles (id, email, role)
+SELECT id, email, 'coach'
+FROM auth.users WHERE email = 'nouveau@email.com'
+ON CONFLICT (id) DO UPDATE SET role = 'coach';</pre>
+      </div>
+    </div>`;
+}
+
 async function loadUsersList() {
   const wrap    = document.getElementById('users-list-wrap');
   const sqlHint = document.getElementById('users-sql-hint');
@@ -7997,158 +8271,47 @@ async function loadUsersList() {
 
   if (sqlCode) sqlCode.textContent = USERS_RPC_SQL;
 
-  // Afficher le bouton Actualiser immédiatement
-  wrap.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <span style="font-size:13px;color:var(--c-text3)">Chargement…</span>
-      <button class="btn btn-outline btn-sm" onclick="loadUsersList()">🔄 Actualiser</button>
-    </div>
-    <div style="text-align:center;padding:40px;color:var(--c-text3)">
-      <div style="font-size:28px;margin-bottom:8px">⏳</div>Chargement…
-    </div>`;
+  wrap.innerHTML = `<div style="text-align:center;padding:40px;color:var(--c-text3)">
+    <div style="font-size:28px;margin-bottom:8px">⏳</div>Chargement…</div>`;
 
   try {
     let users = [];
-    let usedRpc = false;
 
-    // ── Stratégie 1 : Fonction RPC get_all_users() ────────────
-    // (join auth.users + profiles, montre TOUS les utilisateurs)
-    const { data: rpcData, error: rpcErr } = await _supabase
-      .rpc('get_all_users');
-
+    // Stratégie 1 : RPC (montre tous les utilisateurs incl. sans profil)
+    const { data: rpcData, error: rpcErr } = await _supabase.rpc('get_all_users');
     if (!rpcErr && rpcData?.length >= 0) {
-      users   = rpcData;
-      usedRpc = true;
+      users = rpcData;
       if (sqlHint) sqlHint.style.display = 'none';
     } else {
-      // ── Stratégie 2 : Fallback — profiles uniquement ──────────
-      console.warn('[Users] RPC non disponible, fallback sur profiles:', rpcErr?.message);
+      console.warn('[Users] RPC indisponible:', rpcErr?.message);
       if (sqlHint) sqlHint.style.display = 'block';
-
-      const { data: profData, error: profErr } = await _supabase
-        .from('profiles')
-        .select('id,email,role,created_at')
-        .order('created_at', { ascending: false });
-      if (profErr) throw profErr;
-      users = (profData || []).map(p => ({
+      const { data, error } = await _supabase.from('profiles')
+        .select('id,email,role,created_at').order('created_at', { ascending: false });
+      if (error) throw error;
+      users = (data || []).map(p => ({
         id: p.id, email: p.email, role: p.role || 'lecteur',
         created_at: p.created_at, last_sign: null,
       }));
     }
 
     if (!users.length) {
-      wrap.innerHTML = `
-        <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      wrap.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:12px">
           <button class="btn btn-outline btn-sm" onclick="loadUsersList()">🔄 Actualiser</button>
         </div>
-        <div class="empty-state">
-          <div class="empty-icon">👤</div>
-          <h3>Aucun utilisateur trouvé</h3>
-          <p>Créez des comptes dans le Dashboard Supabase.</p>
-        </div>`;
+        <div class="empty-state"><div class="empty-icon">👤</div>
+          <h3>Aucun utilisateur trouvé</h3></div>`;
       return;
     }
 
-    const fmt = d => d ? new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' }) : '—';
-    const fmtTime = d => d ? new Date(d).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : 'Jamais';
-
-    const roleColor = { admin:'#c00', coach:'#004fa0', lecteur:'#666' };
-
-    const rows = users.map(u => {
-      const hasProfile = !!(u.role);
-      const roleVal    = u.role || 'lecteur';
-      const emailSafe  = (u.email || '').replace(/'/g, "\\'");
-      const idSafe     = u.id;
-      return `<tr>
-        <td>
-          <div style="font-size:13px;font-weight:600">${u.email || '(email inconnu)'}</div>
-          ${!hasProfile && !usedRpc ? '<div style="font-size:10px;color:var(--c-text3);margin-top:2px">⚠ Sans profil (rôle par défaut : lecteur)</div>' : ''}
-        </td>
-        <td>
-          <select onchange="changeUserRole('${idSafe}', this.value, '${emailSafe}')"
-            style="padding:5px 8px;border-radius:6px;border:1.5px solid var(--c-border);
-                   background:var(--c-surface2);color:${roleColor[roleVal]||'#333'};
-                   font-size:12px;font-weight:700;cursor:pointer">
-            <option value="admin"   ${roleVal==='admin'  ?'selected':''}>👑 Admin</option>
-            <option value="coach"   ${roleVal==='coach'  ?'selected':''}>🤸 Coach</option>
-            <option value="lecteur" ${roleVal==='lecteur'?'selected':''}>👁 Lecteur</option>
-          </select>
-        </td>
-        <td style="font-size:11px;color:var(--c-text2)">${fmt(u.created_at)}</td>
-        <td style="font-size:11px;color:var(--c-text3)">${fmtTime(u.last_sign)}</td>
-        <td>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-outline btn-sm"
-              onclick="resetUserPassword('${emailSafe}')"
-              title="Envoyer un email de réinitialisation de mot de passe">📧 Reset MDP</button>
-          </div>
-        </td>
-      </tr>`;
-    }).join('');
-
-    const methodBadge = usedRpc
-      ? `<span style="font-size:10px;background:#e8f4ff;color:#004fa0;padding:2px 7px;border-radius:8px;margin-left:8px">✓ Via RPC (liste complète)</span>`
-      : `<span style="font-size:10px;background:#fff3cd;color:#856404;padding:2px 7px;border-radius:8px;margin-left:8px">⚠ Via profiles seulement — installez la RPC</span>`;
-
-    wrap.innerHTML = `
-      <div class="card">
-        <div class="card-header" style="flex-wrap:wrap;gap:8px">
-          <span>👥</span>
-          <h2>${users.length} utilisateur${users.length > 1 ? 's' : ''}</h2>
-          ${methodBadge}
-          <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="loadUsersList()">🔄 Actualiser</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr>
-              <th>Email</th>
-              <th>Rôle</th>
-              <th>Créé le</th>
-              <th>Dernière connexion</th>
-              <th>Actions</th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Guide création utilisateur -->
-      <div class="card" style="margin-top:16px">
-        <div class="card-body" style="padding:16px">
-          <h3 style="font-size:14px;margin-bottom:10px">➕ Créer un nouvel utilisateur</h3>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div style="font-size:13px;color:var(--c-text2)">
-              <strong>Étape 1</strong> — Créer le compte dans
-              <a href="https://supabase.com/dashboard" target="_blank" style="color:var(--c-blue)">
-                Supabase Dashboard → Authentication → Users → Add user
-              </a>
-            </div>
-            <div>
-              <strong style="font-size:13px">Étape 2</strong> — Attribuer un rôle (SQL Editor) :
-              <pre style="background:var(--c-surface2);padding:8px;border-radius:5px;font-size:11px;margin-top:6px;overflow-x:auto">INSERT INTO public.profiles (id, email, role)
-SELECT id, email, 'coach'
-FROM auth.users
-WHERE email = 'nouveau@email.com'
-ON CONFLICT (id) DO UPDATE SET role = 'coach';</pre>
-            </div>
-          </div>
-        </div>
-      </div>`;
+    // Initialiser le tri et afficher
+    _usersSortCol = 'email'; _usersSortDir = 'asc';
+    renderUsersTable(users);
 
   } catch(err) {
     console.error('[loadUsersList]', err);
-    wrap.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <span style="color:#d42020;font-size:13px">❌ ${err.message}</span>
+    wrap.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:12px">
+        <span style="color:#d42020">❌ ${err.message}</span>
         <button class="btn btn-outline btn-sm" onclick="loadUsersList()">🔄 Réessayer</button>
-      </div>
-      <div class="card" style="border-color:#fcc">
-        <div class="card-body" style="padding:16px">
-          <p style="font-size:13px;color:var(--c-text2);margin:0">
-            Si l'erreur persiste, vérifiez que la table <code>public.profiles</code> existe
-            et que les politiques RLS permettent la lecture par l'admin.
-          </p>
-        </div>
       </div>`;
   }
 }
@@ -9083,6 +9246,10 @@ function initMobileMenu() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Injecter la version dans le bouton sidebar
+    const vBtn = document.getElementById('sidebar-version-btn');
+    if (vBtn) vBtn.innerHTML = `v${APP_VERSION} · À propos`;
+
     initMobileMenu(); // ← en premier, synchrone, indépendant du reste
     init();           // garde l'ancien init (async)
     startApp();       // Supabase ou SQLite
@@ -9150,6 +9317,12 @@ document.addEventListener('DOMContentLoaded', () => {
 ================================================================ */
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
+/* ─── Version de l'application ─── */
+const APP_VERSION = '1.0.2';
+
+// Affichage console au chargement
+console.log(`%c[UFOLEP GAF] Version ${APP_VERSION} - ${new Date().toISOString().slice(0,10)}`, 'color:#666; font-size:10px');
+
 const SUPABASE_URL      = 'https://ctqiimnsrbnhrxvnlcmf.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0cWlpbW5zcmJuaHJ4dm5sY21mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NzIxMDUsImV4cCI6MjA5NDE0ODEwNX0.4WIOQO9vkcjT8VmCJ7E19PcZRtsGC471TaKt4vLrhMo';
 
@@ -9233,14 +9406,35 @@ async function doResetPassword() {
 async function doLogout() {
   if (_supabase) await _supabase.auth.signOut();
   _supaUser = null; _supaRole = null; _supaMode = false;
-  // Réinitialiser les données
   state.results = []; state.teamResults = []; state.importHistory = [];
   state.competitions = []; _cache.invalidate();
-  // Réafficher le login
-  const ls = document.getElementById('login-screen');
-  if (ls) ls.classList.remove('hidden');
-  const su = document.getElementById('sidebar-user');
-  if (su) su.style.display = 'none';
+
+  // Afficher l'écran de déconnexion animé
+  const logoutScreen = document.getElementById('logout-screen');
+  const barFill      = document.getElementById('logout-bar-fill');
+  if (logoutScreen) {
+    logoutScreen.classList.add('visible');
+    // Lancer la barre de progression
+    requestAnimationFrame(() => {
+      if (barFill) barFill.style.width = '100%';
+    });
+    // Après 2,5s : cacher logout, montrer login
+    setTimeout(() => {
+      logoutScreen.classList.remove('visible');
+      const ls = document.getElementById('login-screen');
+      if (ls) ls.classList.remove('hidden');
+      const su = document.getElementById('sidebar-user');
+      if (su) su.style.display = 'none';
+      // Réinitialiser la barre pour la prochaine déconnexion
+      if (barFill) { barFill.style.transition = 'none'; barFill.style.width = '0%'; }
+    }, 2600);
+  } else {
+    // Fallback sans l'écran animé
+    const ls = document.getElementById('login-screen');
+    if (ls) ls.classList.remove('hidden');
+    const su = document.getElementById('sidebar-user');
+    if (su) su.style.display = 'none';
+  }
 }
 
 function useSQLiteMode() {
@@ -9262,47 +9456,77 @@ async function loadUserProfile() {
 
 function updateSidebarUser() {
   const isAdmin    = _supaRole === 'admin';
+  const isLecteur  = _supaRole === 'lecteur';
   const isSupabase = _supaMode;
 
-  // Nav migration — admin + supabase
-  const navMig = document.getElementById('nav-migration');
-  if (navMig) navMig.style.display = (isSupabase && isAdmin) ? 'flex' : 'none';
+  // ── Navigation conditionnelle ────────────────────────────
+  const navMig  = document.getElementById('nav-migration');
+  if (navMig)  navMig.style.display  = (isSupabase && isAdmin) ? 'flex' : 'none';
 
-  // Nav gestion utilisateurs — admin + supabase
   const navUsers = document.getElementById('nav-users');
   if (navUsers) navUsers.style.display = (isSupabase && isAdmin) ? 'flex' : 'none';
 
-  // Bouton suppression — admin seulement
+  // Historique et Export BDD : cachés pour les lecteurs
+  const navHist   = document.getElementById('nav-historique');
+  const navExport = document.getElementById('nav-export-bdd');
+  const hideForLecteur = (isSupabase && isLecteur) ? 'none' : '';
+  if (navHist)   navHist.style.display   = hideForLecteur;
+  if (navExport) navExport.style.display = hideForLecteur;
+
+  // ── Bouton suppression — admin seulement ─────────────────
   const btnClear = document.getElementById('btn-clear-data');
   if (btnClear) btnClear.style.display = isAdmin ? 'inline-flex' : 'none';
 
-  // Bloc boutons Supabase :
-  // - le wrapper s'affiche pour TOUS les utilisateurs en mode Supabase
-  // - le bouton "Sauvegarder" est masqué pour les lecteurs (lecture seule)
+  // ── Boutons Supabase ──────────────────────────────────────
   const btnSaveWrap = document.getElementById('btn-supabase-save-wrap');
   if (btnSaveWrap) btnSaveWrap.style.display = isSupabase ? 'block' : 'none';
   const btnSaveOnly = document.getElementById('btn-save-supabase');
   if (btnSaveOnly) btnSaveOnly.style.display = canWrite() ? 'block' : 'none';
 
-  // Indicateur mode SQLite — si pas Supabase
+  // ── Boutons stockage SQLite : cachés pour les lecteurs ───
+  const sqliteBtns = document.getElementById('sqlite-storage-btns');
+  if (sqliteBtns) sqliteBtns.style.display = isLecteur ? 'none' : 'flex';
+
+  // ── Indicateur mode SQLite ───────────────────────────────
   const sqliteInd = document.getElementById('sqlite-mode-indicator');
   if (sqliteInd) sqliteInd.style.display = (!isSupabase) ? 'block' : 'none';
 
+  // ── Topbar : CSV / JSON / Importer ─────────────────────
+  const topbarWriteBtns = ['btn-export-csv', 'btn-export-json', 'btn-import'];
+  topbarWriteBtns.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = (isSupabase && isLecteur) ? 'none' : '';
+  });
 
+  // ── Infos utilisateur ────────────────────────────────────
   const su = document.getElementById('sidebar-user');
   if (su) su.style.display = isSupabase ? 'block' : 'none';
+
   const em = document.getElementById('sidebar-user-email');
   if (em) em.textContent = _supaUser?.email || '';
+
   const rb = document.getElementById('sidebar-user-role');
   if (rb) {
     rb.textContent = _supaRole || 'lecteur';
     rb.className   = 'role-badge ' + (_supaRole || 'lecteur');
   }
-  // Masquer les boutons d'import si rôle = lecteur
-  const importBtns = document.querySelectorAll('.import-btn, #btn-import-top, #open-import');
-  importBtns.forEach(b => {
-    if (b) b.style.display = (_supaRole === 'lecteur') ? 'none' : '';
-  });
+
+  // Badge "Lecture seule" pour les lecteurs
+  let lecteurBadge = document.getElementById('lecteur-badge');
+  if (isLecteur && isSupabase) {
+    if (!lecteurBadge) {
+      lecteurBadge = document.createElement('span');
+      lecteurBadge.id = 'lecteur-badge';
+      lecteurBadge.style.cssText = 'display:inline-block;margin-top:4px;padding:2px 8px;' +
+        'background:rgba(255,165,0,.25);color:#f0c040;border-radius:8px;font-size:10px;' +
+        'font-weight:600;letter-spacing:.3px';
+      lecteurBadge.textContent = '👁 Lecture seule';
+      if (em) em.parentNode.insertBefore(lecteurBadge, em.nextSibling);
+    }
+    lecteurBadge.style.display = 'inline-block';
+  } else if (lecteurBadge) {
+    lecteurBadge.style.display = 'none';
+  }
 }
 
 // ── Chargement des données depuis Supabase ────────────────────────
