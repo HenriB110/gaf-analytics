@@ -960,7 +960,7 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
         💾 Continuer en mode hors-ligne (SQLite local)
       </button>
 
-      <div class="login-version">UFOLEP GAF Analytics · v2.0 Supabase</div>
+      <div class="login-version" id="login-version">UFOLEP GAF Analytics · vX.X.X</div>
     </div>
   </div>
 
@@ -9319,6 +9319,12 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
 const APP_VERSION = '1.0.2';
+
+// Mettre à jour l'affichage de la version dès que le DOM est prêt
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('login-version');
+  if (el) el.textContent = `UFOLEP GAF Analytics · v${APP_VERSION} Supabase`;
+}, { once: true });
 
 // Affichage console au chargement
 console.log(`%c[UFOLEP GAF] Version ${APP_VERSION} - ${new Date().toISOString().slice(0,10)}`, 'color:#666; font-size:10px');
