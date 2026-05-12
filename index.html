@@ -9409,6 +9409,11 @@ async function doResetPassword() {
   }
 }
 
+function resetLoginButton() {
+  const btn = document.getElementById('login-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Se connecter →'; }
+}
+
 async function doLogout() {
   if (_supabase) await _supabase.auth.signOut();
   _supaUser = null; _supaRole = null; _supaMode = false;
@@ -9427,6 +9432,7 @@ async function doLogout() {
     // Après 2,5s : cacher logout, montrer login
     setTimeout(() => {
       logoutScreen.classList.remove('visible');
+      resetLoginButton();
       const ls = document.getElementById('login-screen');
       if (ls) ls.classList.remove('hidden');
       const su = document.getElementById('sidebar-user');
@@ -9436,6 +9442,7 @@ async function doLogout() {
     }, 2600);
   } else {
     // Fallback sans l'écran animé
+    resetLoginButton();
     const ls = document.getElementById('login-screen');
     if (ls) ls.classList.remove('hidden');
     const su = document.getElementById('sidebar-user');
@@ -9445,6 +9452,7 @@ async function doLogout() {
 
 function useSQLiteMode() {
   _supaMode = false;
+  resetLoginButton();
   hideLoginScreen();
   updateSidebarUser();  // affiche l'indicateur SQLite
   toast('Mode hors-ligne activé — données stockées localement', 'info');
