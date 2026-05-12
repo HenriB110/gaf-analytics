@@ -527,25 +527,167 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
 ═══════════════════════════════════════════════════════════ */
 #menu-toggle { display: none; background: none; border: none; color: var(--c-text); cursor: pointer; font-size: 22px; }
 
-@media (max-width: 768px) {
-  #sidebar { transform: translateX(-100%); height: 100vh; }
-  #sidebar.open { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,.3); }
-  #main { margin-left: 0; height: 100vh; overflow-y: auto; }
-  #menu-toggle { display: flex; }
-  .charts-grid { grid-template-columns: 1fr; }
-  .stats-grid { grid-template-columns: repeat(2, 1fr); }
-  #page { padding: 14px; }
-  .gymnaste-header { flex-direction: column; }
+/* ═══════════════════════════════════════════════════════════
+   RESPONSIVE — MOBILE & TABLETTE
+   ⚠ Ces règles n'affectent PAS le desktop (> 1024px)
+   Toutes les règles desktop sont définies AVANT ce bloc.
+═══════════════════════════════════════════════════════════ */
+
+/* ── Overlay sidebar mobile ──────────────────────────────── */
+#sidebar-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 99;
+  background: rgba(0,0,0,.5);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity .3s ease;
+}
+#sidebar-overlay.visible {
+  opacity: 1;
 }
 
-/* ── Écrans 1366×768 et moins ──────────────────────────────── */
+/* ── 1366px : ajustements légers ─────────────────────────── */
 @media (max-width: 1366px) {
-  .stats-grid { grid-template-columns: repeat(3, 1fr); }
+  .stats-grid  { grid-template-columns: repeat(3, 1fr); }
   .charts-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 1100px) {
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ── 1024px : début du mode tablette/mobile ──────────────── */
+@media (max-width: 1024px) {
+  /* Sidebar cachée par défaut, slide depuis la gauche */
+  #sidebar {
+    transform: translateX(-100%);
+    z-index: 200;
+    box-shadow: none;
+  }
+  #sidebar.open {
+    transform: translateX(0);
+    box-shadow: 6px 0 24px rgba(0,0,0,.4);
+  }
+  #sidebar-overlay.visible { display: block; }
+
+  /* Main prend toute la largeur */
+  #main { margin-left: 0; }
+
+  /* Bouton hamburger visible */
+  #menu-toggle { display: flex; }
+
+  /* Grilles en 2 colonnes */
+  .charts-grid { grid-template-columns: 1fr 1fr; }
+  .stats-grid  { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ── 768px : mode mobile classique ──────────────────────── */
+@media (max-width: 768px) {
+  /* Typographie légèrement agrandie pour lisibilité */
+  body { font-size: 15px; }
+
+  /* Stats en 2 colonnes */
+  .stats-grid  { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .charts-grid { grid-template-columns: 1fr; }
+
+  /* Page padding réduit */
+  #page { padding: 14px; }
+
+  /* Topbar compacte */
+  #topbar { padding: 0 14px; gap: 10px; }
+  #topbar .topbar-title { font-size: 14px; }
+
+  /* Tableaux scrollables + police lisible */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table       { font-size: 13px; min-width: 480px; }
+  th, td      { padding: 10px 10px; }
+
+  /* Filtres en colonne */
+  .filters-bar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .filter-group { width: 100%; }
+  .filter-group select,
+  .filter-group input { width: 100%; box-sizing: border-box; }
+
+  /* Boutons plus grands (touch target ≥ 44px) */
+  .btn        { min-height: 40px; padding: 10px 16px; font-size: 14px; }
+  .btn-sm     { min-height: 36px; padding: 7px 12px;  font-size: 12px; }
+
+  /* Cards */
+  .card       { border-radius: 10px; }
+  .card-body  { padding: 14px; }
+
+  /* Header gymnaste/club en colonne */
+  .gymnaste-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+
+  /* Tabs horizontaux scrollables */
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    gap: 4px;
+    padding-bottom: 2px;
+  }
+  .tab-btn { white-space: nowrap; padding: 8px 12px; font-size: 12px; flex-shrink: 0; }
+
+  /* Pagination compacte */
+  .pagination { flex-wrap: wrap; gap: 4px; justify-content: center; }
+  .pagination button { min-width: 36px; min-height: 36px; padding: 6px 8px; }
+
+  /* Modal pleine hauteur mobile */
+  .modal {
+    width: 100%; max-width: 100%;
+    height: 100%; max-height: 100%;
+    border-radius: 0;
+    margin: 0;
+  }
+  .modal-overlay { align-items: flex-end; }
+  .modal-overlay.open .modal {
+    transform: translateY(0);
+    border-radius: 16px 16px 0 0;
+    max-height: 92vh;
+    height: auto;
+  }
+  .modal-body { font-size: 14px; padding: 16px; }
+  .modal-header h2 { font-size: 16px; }
+
+  /* Accordion grilles en 1 colonne */
+  .detail-agres-grid    { grid-template-columns: 1fr; }
+  .detail-accordion-body{ grid-template-columns: 1fr; }
+
+  /* Sections nav sidebar */
+  .nav-item   { padding: 10px 14px; font-size: 13px; }
+}
+
+/* ── 480px : très petits écrans (iPhone SE, etc.) ─────────── */
+@media (max-width: 480px) {
+  :root { --sidebar-w: 100vw; }   /* sidebar plein écran sur très petit */
+
+  body { font-size: 14px; }
+
+  #page { padding: 10px; }
+
+  .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat-card  { padding: 12px 10px; }
+  .stat-card .stat-value { font-size: 22px; }
+  .stat-card .stat-label { font-size: 10px; }
+
+  /* Section title */
+  .section-title { font-size: 18px; }
+  .section-sub   { font-size: 12px; }
+
+  /* Topbar très compacte */
+  #topbar { height: 50px; padding: 0 10px; gap: 8px; }
+
+  /* Boutons empilés */
+  .btn-group { flex-direction: column; }
+
+  /* Tables minimalistes */
+  table     { font-size: 12px; min-width: 360px; }
+  th, td    { padding: 8px 6px; }
+
+  /* Login card */
+  .login-card { padding: 28px 20px; border-radius: 14px; }
+}
+
 
 /* PAGINATION */
 .pagination { display: flex; align-items: center; gap: 6px; padding: 14px 0 0; justify-content: flex-end; }
@@ -965,6 +1107,9 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
 <!-- ═══════════════════════════════════════════════════════════
      MAIN
 ═══════════════════════════════════════════════════════════ -->
+<!-- Overlay pour fermer la sidebar sur mobile (tap en dehors) -->
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
 <div id="main">
   <!-- TOPBAR -->
   <header id="topbar">
@@ -8799,11 +8944,40 @@ async function init() {
   });
 
   // Mobile menu
-  document.getElementById('menu-toggle').addEventListener('click', () => {
-    document.getElementById('sidebar').classList.toggle('open');
+  /* ── Sidebar mobile ────────────────────────────────────── */
+  const sidebar  = document.getElementById('sidebar');
+  const overlay  = document.getElementById('sidebar-overlay');
+  const menuBtn  = document.getElementById('menu-toggle');
+
+  function openSidebar() {
+    sidebar.classList.add('open');
+    if (overlay) { overlay.style.display = 'block'; requestAnimationFrame(() => overlay.classList.add('visible')); }
+    document.body.style.overflow = 'hidden';
+  }
+  function closeSidebar() {
+    sidebar.classList.remove('open');
+    if (overlay) {
+      overlay.classList.remove('visible');
+      setTimeout(() => { overlay.style.display = 'none'; }, 300);
+    }
+    document.body.style.overflow = '';
+  }
+  // Exposer au scope global pour les onclick inline
+  window.openSidebar  = openSidebar;
+  window.closeSidebar = closeSidebar;
+
+  if (menuBtn) menuBtn.addEventListener('click', () => {
+    sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
+  });
+
+  // Fermer la sidebar quand on clique sur un élément de navigation
+  document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+    item.addEventListener('click', () => {
+      if (window.innerWidth <= 1024) closeSidebar();
+    });
   });
   document.getElementById('main').addEventListener('click', () => {
-    document.getElementById('sidebar').classList.remove('open');
+    if (window.innerWidth <= 1024 && sidebar?.classList.contains('open')) closeSidebar();
   });
 
   // Modal
