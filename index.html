@@ -747,6 +747,65 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
 /* BACK BTN */
 .back-btn { display: flex; align-items: center; gap: 6px; color: var(--c-blue); cursor: pointer; font-size: 14px; font-weight: 600; }
 .back-btn:hover { text-decoration: underline; }
+/* ── Grille Records par agrès ───────────────────────────────── */
+.records-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+@media (max-width: 900px)  { .records-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px)  { .records-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; } }
+/* Carte record individuelle */
+.record-card {
+  background: var(--bg);
+  border: 1.5px solid var(--brd);
+  border-radius: 14px;
+  padding: 16px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  transition: box-shadow .18s ease, transform .15s ease;
+  cursor: default;
+}
+.record-card:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,.12);
+  transform: translateY(-2px) scale(1.01);
+}
+.record-card.empty { opacity: .5; }
+.record-score {
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: -1px;
+  text-align: center;
+  padding: 10px 0 8px;
+  line-height: 1;
+}
+.record-gymnaste {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,.6);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.record-source {
+  font-size: 10px;
+  color: #777;
+  font-style: italic;
+  text-align: center;
+  line-height: 1.5;
+}
+.record-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 20px;
+  letter-spacing: .3px;
+  white-space: nowrap;
+}
 /* Fil d'Ariane */
 .breadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-bottom: 14px; font-size: 13px; color: var(--c-text3); }
 .breadcrumb-link { color: var(--c-blue); cursor: pointer; }
@@ -5513,18 +5572,72 @@ function renderClubFiche() {
           .sort((a,b) => (b.agres[ag.code].final) - (a.agres[ag.code].final))[0];
         if (best) agresRecords[ag.code] = best;
       });
-      const agresRecordsHtml = AGRES.map(ag => {
-        const b = agresRecords[ag.code];
-        if (!b) return '';
-        const nomSafe   = b.nom.replace(/'/g,"\'");
-        const prenomSafe= b.prenom.replace(/'/g,"\'");
-        return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--c-border)">
-          <span style="width:36px;text-align:center;font-size:13px;font-weight:700;color:var(--c-text2)">${ag.icon} ${ag.code}</span>
-          <strong style="font-size:15px;color:var(--c-blue)">${fmt(b.agres[ag.code].final)}</strong>
-          <span class="gymnaste-link" style="font-size:12px" onclick="openGymnastesFiche('${nomSafe}','${prenomSafe}')">${b.prenom} ${b.nom}</span>
-          <span style="font-size:11px;color:var(--c-text3);margin-left:auto">${b.categorie} · ${b.saison||''}</span>
-        </div>`;
-      }).join('');
+      // Couleurs par agrès pour les cartes records
+      const AGRES_COLORS = {
+        VT: { bg: '#e8f0fe', border: '#4285f4', accent: '#1a56db', label: 'Saut' },
+        UB: { bg: '#fce8e6', border: '#e53935', accent: '#c62828', label: 'Barres Asym.' },
+        BB: { bg: '#e6f4ea', border: '#34a853', accent: '#1e7e34', label: 'Poutre' },
+        FX: { bg: '#fff8e1', border: '#f9a825', accent: '#e65100', label: 'Sol' },
+      };
+
+      // Grille de 4 cartes — une par agrès — utilise les classes CSS .record-card
+      const agresRecordsHtml = (() => {
+        const cards = AGRES.map(ag => {
+          const b   = agresRecords[ag.code];
+          const col = AGRES_COLORS[ag.code] || { bg:'#f5f5f5', border:'#999', accent:'#555', label:ag.code };
+
+          // Carte "vide" (pas de record pour cet agrès)
+          if (!b) return `
+            <div class="record-card empty"
+                 style="--bg:${col.bg};--brd:${col.border}">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <span style="font-size:20px">${ag.icon}</span>
+                <div>
+                  <div style="font-weight:800;font-size:13px;color:${col.accent}">${ag.code}</div>
+                  <div style="font-size:10px;color:${col.accent};opacity:.7">${col.label}</div>
+                </div>
+              </div>
+              <div style="font-size:12px;color:#999;font-style:italic;padding:8px 0">Aucune donnée</div>
+            </div>`;
+
+          const nomSafe    = b.nom.replace(/'/g,"\'");
+          const prenomSafe = b.prenom.replace(/'/g,"\'");
+          const saison     = b.saison   || '';
+          const compName   = b.compNom  || '';
+          const source     = [b.categorie, saison].filter(Boolean).join(' · ');
+
+          return `
+            <div class="record-card" title="Meilleur score toutes saisons confondues"
+                 style="--bg:${col.bg};--brd:${col.border}">
+              <!-- En-tête : icône + code + label + badge -->
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-size:22px;line-height:1">${ag.icon}</span>
+                  <div>
+                    <div style="font-weight:800;font-size:14px;color:${col.accent};letter-spacing:.3px">${ag.code}</div>
+                    <div style="font-size:10px;color:${col.accent};opacity:.75;white-space:nowrap">${col.label}</div>
+                  </div>
+                </div>
+                <span class="record-badge" style="color:${col.accent};background:${col.border}2e">🏆 Record</span>
+              </div>
+              <!-- Score record — élément le plus visible -->
+              <div class="record-score" style="color:${col.accent};text-shadow:0 1px 2px ${col.border}44">
+                ${fmt(b.agres[ag.code].final)}
+              </div>
+              <!-- Gymnaste cliquable -->
+              <div class="record-gymnaste gymnaste-link"
+                   onclick="openGymnastesFiche('${nomSafe}','${prenomSafe}')">
+                <span>🤸</span>
+                <span>${b.prenom} ${b.nom}</span>
+              </div>
+              <!-- Source (catégorie · saison + compétition) -->
+              <div class="record-source">
+                ${source}${compName ? `<br>${compName}` : ''}
+              </div>
+            </div>`;
+        });
+        return `<div class="records-grid">${cards.join('')}</div>`;
+      })();
       const topRows = top.map((r,i) => {
         const rankClass = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other';
         const nomSafe   = r.nom.replace(/'/g,"\'");
@@ -5558,11 +5671,13 @@ function renderClubFiche() {
             </table>
           </div>
         </div>
-        <div class="card">
-          <div class="card-header"><span>🏆</span><h2>Records par agrès</h2>
-            <span style="margin-left:auto;font-size:12px;color:var(--c-text3)">Meilleur score all-time</span>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <span style="font-size:18px">🏆</span>
+            <h2 style="margin:0;font-size:16px;font-weight:800">Records par agrès</h2>
+            <span style="font-size:11px;color:var(--c-text3);margin-left:auto;font-style:italic">Meilleur score all-time · toutes saisons confondues</span>
           </div>
-          <div style="padding:12px 16px">${agresRecordsHtml || '<p style="color:var(--c-text3);font-size:13px">Aucune donnée</p>'}</div>
+          ${agresRecordsHtml}
         </div>
       </div>`;
     })()}
@@ -8949,7 +9064,28 @@ function showAbout() {
 
         ${[
           {
-            ver: '1.7.1', date: '14 mai 2026', current: true,
+            ver: '1.7.3', date: '14 mai 2026', current: true,
+            items: [
+              'Cartes Records par agrès : refonte responsive avec classes CSS dédiées (.records-grid, .record-card)',
+              'Grille 4 colonnes > 900px, 2×2 sur tablette/mobile, gap réduit < 480px — sans media query inline',
+              'Hover avec box-shadow + translateY(-2px) + scale(1.01) via CSS (plus fluide que les handlers onmouseover)',
+              'Variables CSS --bg et --brd sur chaque carte pour cohérence avec le thème',
+              'Passage en version v1.7.3',
+            ]
+          },
+          {
+            ver: '1.7.2', date: '14 mai 2026', current: false,
+            items: [
+              'Refonte visuelle des Records par Agrès dans la fiche Club : grille de 4 cartes colorées (VT=bleu, UB=rouge, BB=vert, FX=jaune)',
+              'Chaque carte affiche : code + label de l\'agrès, score record en très grande taille, gymnaste cliquable vers sa fiche, catégorie + saison + compétition',
+              'Badge "🏆 RECORD CLUB" discret sur chaque carte, effet hover (ombre + légère élévation)',
+              'Tooltip natif "Meilleur score toutes saisons confondues" sur survol',
+              'Responsive : grille auto-fill 200px minimum (2×2 sur desktop, 1 colonne sur mobile)',
+              'Passage en version v1.7.2',
+            ]
+          },
+          {
+            ver: '1.7.1', date: '14 mai 2026', current: false,
             items: [
               'Graphiques Évolution : échelles Y dynamiques — plus de min:0 figé, marge ±2 pts sur le total, ±1.5 pt sur les agrès',
               'Graphique total : légende masquée, points plus visibles (6px), label amélioré dans le tooltip',
@@ -10606,7 +10742,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
-const APP_VERSION = '1.7.1';
+const APP_VERSION = '1.7.3';
 
 // Mettre à jour l'affichage de la version dès que le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
