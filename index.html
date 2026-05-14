@@ -793,6 +793,10 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
 .active-club-rank { font-size: 18px; width: 28px; text-align: center; flex-shrink: 0; }
 .active-club-name { flex: 1; font-weight: 600; font-size: 13px; }
 .active-club-stat { font-size: 12px; color: var(--c-text3); }
+/* ── Uniformisation Analyses Club ─────────────────────────── */
+.tab-panel .chart-card h3 { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
+.tab-panel .chart-card > p { font-size: 11px; color: var(--c-text3); margin: 0 0 10px; }
+.key-points-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
 
 /* ── Grille Records par agrès ───────────────────────────────── */
 .records-grid {
@@ -1908,6 +1912,19 @@ const GROUPES = {
 const GROUPE_COLORS = { G1:'#003f8a', G2:'#d42020', G3:'#18a058', G4:'#f0a500' };
 
 const CHART_PALETTE = ['#003f8a','#d42020','#18a058','#f0a500','#7b3fe4','#e87c20'];
+
+// Palette haute visibilité pour le graphique d'évolution des gymnastes.
+// 8 couleurs saturées, bien distinctes sur fond clair et sombre.
+const GYMN_PALETTE = [
+  '#1565c0',  // bleu roi
+  '#c62828',  // rouge cardinal
+  '#2e7d32',  // vert forêt
+  '#e65100',  // orange brûlé
+  '#6a1b9a',  // violet profond
+  '#00838f',  // sarcelle foncée
+  '#ad1457',  // rose framboise
+  '#4e342e',  // brun chocolat
+];
 const PAGE_SIZE = 20;
 
 /* =========================================================
@@ -2145,7 +2162,7 @@ let state = {
   compareSearch: '',
   // Section Analyses Club
   acClub: '',        // club sélectionné
-  acPctSeuil: 13,    // seuil % par agrès (Analyses Club)
+  acPctSeuil: 11,    // seuil % par agrès (Analyses Club)
   acFullScale: false, // graphique top gymn : échelle complète (0-50) ou adaptée (focus performance)
   anaPctSeuil: 13,   // seuil % par agrès (Analyses Globales)
   acClubPage: 1,     // pagination clubs
@@ -6590,13 +6607,127 @@ function renderAnalysesClub() {
   </tr>`).join('');
 
   // ── % gymnastes ≥ seuil pts par agrès ────────────────────────
-  const acSeuil = state.acPctSeuil || 13;
+  const acSeuil = state.acPctSeuil || 11;
   const pct13 = AGRES.map(ag => {
     const scores = catData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0);
     const above  = scores.filter(v=>v>=acSeuil).length;
     const pct    = scores.length ? Math.round(above/scores.length*100) : 0;
-    return { code:ag.code, pct, n:scores.length };
+    return { code:ag.code, icon:ag.icon, label:ag.label, pct, n:scores.length };
   });
+
+  // ── Positionnement du club dans le groupe ─────────────────
+  // Calcule le rang du club parmi tous les clubs du groupe sur la même catégorie
+  const allClubsGroupe = [...new Set(groupeData.map(r=>normalizeClub(r.club)))];
+  const clubAvgByClub  = allClubsGroupe.map(c => {
+    const scores = groupeData.filter(r=>normalizeClub(r.club)===c).map(r=>r.total).filter(v=>v>0);
+    return { club: c, avg: scores.length ? avg(scores) : 0 };
+  }).sort((a,b) => b.avg - a.avg);
+  const clubRank    = clubAvgByClub.findIndex(c=>c.club===state.acClub) + 1;
+  const clubRankPct = allClubsGroupe.length > 1
+    ? Math.round((1 - (clubRank-1)/allClubsGroupe.length) * 100) : null;
+  const groupeAvgTotal = avg(groupeData.map(r=>r.total).filter(v=>v>0));
+  const clubAvgTotal   = avg(totals);
+  const vsGroupe       = clubAvgTotal - groupeAvgTotal;
+
+  // ── Points faibles prioritaires (agrès dont la moyenne < moyenne groupe) ─
+  const agresInsights = AGRES.map(ag => {
+    const clubScores   = catData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0);
+    const groupeScores = groupeData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0);
+    const cAvg = clubScores.length ? avg(clubScores) : 0;
+    const gAvg = groupeScores.length ? avg(groupeScores) : 0;
+    const pct13ag = clubScores.length
+      ? Math.round(clubScores.filter(v=>v>=(state.acPctSeuil||11)).length/clubScores.length*100) : 0;
+    return { code: ag.code, icon: ag.icon, cAvg, gAvg, diff: cAvg - gAvg, pct: pct13ag, n: clubScores.length };
+  }).sort((a,b) => a.diff - b.diff); // du plus faible au plus fort vs groupe
+
+  // Tendance évolution (comparaison première vs dernière compétition du club)
+  const compsSorted = [...new Set(catData.map(r=>r.compId))].sort();
+  const firstCompData = catData.filter(r=>r.compId===compsSorted[0]);
+  const lastCompData  = catData.filter(r=>r.compId===compsSorted[compsSorted.length-1]);
+  const trendFirst = avg(firstCompData.map(r=>r.total).filter(v=>v>0));
+  const trendLast  = avg(lastCompData.map(r=>r.total).filter(v=>v>0));
+  const trendDiff  = trendLast - trendFirst;
+
+  // ── Points clés automatiques ──────────────────────────────
+  // Agrès le plus fort et le plus faible du club (vs groupe)
+  const agresInsightsSorted = [...agresInsights]; // déjà triés du + faible au + fort
+  const agresWeakest  = agresInsightsSorted[0];   // diff la plus négative
+  const agresStrongest= agresInsightsSorted[agresInsightsSorted.length-1]; // diff la plus positive
+  // Évolution entre avant-dernière et dernière compétition
+  const compsSortedAll = [...new Set(catData.map(r=>r.compId))].sort();
+  const prevCompData = compsSortedAll.length >= 2
+    ? catData.filter(r=>r.compId===compsSortedAll[compsSortedAll.length-2]) : [];
+  const lastCompAvg  = avg(catData.filter(r=>r.compId===compsSortedAll[compsSortedAll.length-1]).map(r=>r.total).filter(v=>v>0));
+  const prevCompAvg  = avg(prevCompData.map(r=>r.total).filter(v=>v>0));
+  const lastVsPrev   = prevCompData.length ? (lastCompAvg - prevCompAvg) : null;
+
+  // Génère les points clés automatiques
+  const keyPoints = [];
+  if (clubRank > 0 && allClubsGroupe.length > 1) {
+    const rankTxt = clubRank === 1 ? '🥇 Leader du groupe' : clubRank <= 3 ? `🥈 ${clubRank}e du groupe` : `${clubRank}e / ${allClubsGroupe.length} clubs`;
+    const vsTxt = vsGroupe >= 0
+      ? `+${vsGroupe.toFixed(2)} pts au-dessus de la moyenne`
+      : `${vsGroupe.toFixed(2)} pts sous la moyenne du groupe`;
+    keyPoints.push({ icon: '📍', label: 'Positionnement', value: rankTxt, detail: vsTxt, good: vsGroupe >= 0 });
+  }
+  if (compsSortedAll.length >= 2) {
+    const trendIcon = trendDiff >= 0.5 ? '📈' : trendDiff <= -0.5 ? '📉' : '➡️';
+    keyPoints.push({
+      icon: trendIcon, label: 'Tendance saison',
+      value: `${trendDiff >= 0 ? '+' : ''}${trendDiff.toFixed(2)} pts`,
+      detail: trendDiff >= 0.5 ? 'Progression notable depuis le début de saison'
+            : trendDiff <= -0.5 ? 'Régression depuis le début de saison'
+            : 'Niveau stable sur la saison',
+      good: trendDiff >= 0
+    });
+  }
+  if (lastVsPrev !== null) {
+    keyPoints.push({
+      icon: lastVsPrev >= 0 ? '✅' : '⚠️', label: 'Dernière compétition',
+      value: `${lastVsPrev >= 0 ? '+' : ''}${lastVsPrev.toFixed(2)} pts vs compétition précédente`,
+      detail: lastVsPrev >= 0 ? 'En forme — résultat en hausse' : 'Vigilance — résultat en baisse',
+      good: lastVsPrev >= 0
+    });
+  }
+  if (agresStrongest && agresStrongest.diff > 0.2) {
+    keyPoints.push({
+      icon: '💪', label: 'Point fort',
+      value: `${agresStrongest.icon} ${agresStrongest.code} — moy. ${agresStrongest.cAvg.toFixed(2)}`,
+      detail: `+${agresStrongest.diff.toFixed(2)} pts vs groupe — à valoriser`,
+      good: true
+    });
+  }
+  if (agresWeakest && agresWeakest.diff < -0.2) {
+    keyPoints.push({
+      icon: '🎯', label: 'Priorité entraînement',
+      value: `${agresWeakest.icon} ${agresWeakest.code} — moy. ${agresWeakest.cAvg.toFixed(2)}`,
+      detail: `${agresWeakest.diff.toFixed(2)} pts vs groupe — renforcer ce secteur`,
+      good: false
+    });
+  }
+
+  // ── Analyse textuelle progression ──────────────────────────
+  // Identifier les agrès en progression sur la saison (1ère comp → dernière)
+  const agresProgression = AGRES.map(ag => {
+    const firstScores = firstCompData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0);
+    const lastScores  = lastCompData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0);
+    const fAvg = firstScores.length ? avg(firstScores) : 0;
+    const lAvg = lastScores.length  ? avg(lastScores)  : 0;
+    return { code: ag.code, icon: ag.icon, diff: lAvg - fAvg, fAvg, lAvg };
+  }).filter(a => a.fAvg > 0 && a.lAvg > 0);
+
+  const agresEnHausse  = agresProgression.filter(a=>a.diff > 0.1).sort((a,b)=>b.diff-a.diff);
+  const agresEnBaisse  = agresProgression.filter(a=>a.diff < -0.1).sort((a,b)=>a.diff-b.diff);
+
+  const progressionText = (() => {
+    if (!agresProgression.length) return '';
+    const parts = [];
+    if (agresEnHausse.length)
+      parts.push(`<span style="color:var(--c-green)">📈 En hausse :</span> ${agresEnHausse.map(a=>`${a.icon} ${a.code} (+${a.diff.toFixed(2)})`).join(', ')}`);
+    if (agresEnBaisse.length)
+      parts.push(`<span style="color:var(--c-red)">📉 En baisse :</span> ${agresEnBaisse.map(a=>`${a.icon} ${a.code} (${a.diff.toFixed(2)})`).join(', ')}`);
+    return parts.join(' — ');
+  })();
 
   // ── Heatmap : agrès × compétitions ───────────────────────
   const compNames = [...new Set(catData.map(r=>r.compNom))].slice(0,8);
@@ -6637,21 +6768,74 @@ function renderAnalysesClub() {
 
     <!-- TAB 1 : Vue d'ensemble -->
     <div class="tab-panel ${state.acActiveTab==='ac-overview'?'active':''}" id="ac-overview">
-      <div class="charts-grid" style="margin-top:16px">
+
+      <!-- Indicateur positionnement -->
+      ${clubRank > 0 ? `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0 20px">
+        <div style="flex:1;min-width:180px;background:${vsGroupe>=0?'rgba(24,160,88,.1)':'rgba(212,32,32,.08)'};
+             border:1.5px solid ${vsGroupe>=0?'var(--c-green)':'var(--c-red)'};border-radius:12px;padding:14px 18px">
+          <div style="font-size:11px;font-weight:600;color:var(--c-text3);text-transform:uppercase;letter-spacing:.5px">Vs groupe ${groupe}</div>
+          <div style="font-size:24px;font-weight:900;color:${vsGroupe>=0?'var(--c-green)':'var(--c-red)'};margin:4px 0">
+            ${vsGroupe>=0?'+':''}${vsGroupe.toFixed(2)}
+          </div>
+          <div style="font-size:12px;color:var(--c-text2)">pts de total moyen vs moy. groupe</div>
+        </div>
+        <div style="flex:1;min-width:180px;background:var(--c-surface2);border:1.5px solid var(--c-border);border-radius:12px;padding:14px 18px">
+          <div style="font-size:11px;font-weight:600;color:var(--c-text3);text-transform:uppercase;letter-spacing:.5px">Classement groupe</div>
+          <div style="font-size:24px;font-weight:900;color:var(--c-blue);margin:4px 0">${clubRank}<span style="font-size:14px;font-weight:500;color:var(--c-text3)"> / ${allClubsGroupe.length}</span></div>
+          <div style="font-size:12px;color:var(--c-text2)">top ${100-clubRankPct}% des clubs · ${groupe} ${state.acCat}</div>
+        </div>
+        <div style="flex:1;min-width:180px;background:${trendDiff>=0?'rgba(24,160,88,.1)':'rgba(212,32,32,.08)'};
+             border:1.5px solid ${trendDiff>=0?'var(--c-green)':'var(--c-red)'};border-radius:12px;padding:14px 18px">
+          <div style="font-size:11px;font-weight:600;color:var(--c-text3);text-transform:uppercase;letter-spacing:.5px">Tendance saison</div>
+          <div style="font-size:24px;font-weight:900;color:${trendDiff>=0?'var(--c-green)':'var(--c-red)'};margin:4px 0">
+            ${trendDiff>=0?'▲':'▼'} ${Math.abs(trendDiff).toFixed(2)}
+          </div>
+          <div style="font-size:12px;color:var(--c-text2)">${trendDiff>=0?'progression':'régression'} 1ère → dernière compétition</div>
+        </div>
+      </div>` : ''}
+
+      <!-- ── Points clés de la saison ── -->
+      ${keyPoints.length ? `
+      <div style="margin:0 0 20px">
+        <div style="font-size:14px;font-weight:800;color:var(--c-text);margin-bottom:12px;display:flex;align-items:center;gap:8px">
+          <span>⚡</span> Points clés de la saison
+          <span style="font-size:11px;font-weight:400;color:var(--c-text3);margin-left:4px">${state.acCat} · Saison ${state.acSaison}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">
+          ${keyPoints.map(kp => `
+          <div style="background:${kp.good?'rgba(24,160,88,.07)':'rgba(212,32,32,.06)'};
+               border:1.5px solid ${kp.good?'rgba(24,160,88,.3)':'rgba(212,32,32,.25)'};
+               border-radius:12px;padding:12px 14px">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+              <span style="font-size:18px">${kp.icon}</span>
+              <span style="font-size:10px;font-weight:700;color:var(--c-text3);text-transform:uppercase;letter-spacing:.5px">${kp.label}</span>
+            </div>
+            <div style="font-size:14px;font-weight:800;color:${kp.good?'var(--c-green)':'var(--c-red)'};margin-bottom:4px">${kp.value}</div>
+            <div style="font-size:11px;color:var(--c-text2)">${kp.detail}</div>
+          </div>`).join('')}
+        </div>
+      </div>` : ''}
+
+      <div class="charts-grid">
         <div class="chart-card">
-          <h3>🕸 Radar moyen par agrès</h3>
-          <div class="chart-wrap"><canvas id="chart-ac-radar"></canvas></div>
+          <h3>📊 Notes moyennes par agrès — Club vs Groupe</h3>
+          <p style="font-size:11px;color:var(--c-text3);margin:-4px 0 8px">Comparaison directe note par note — club (★) vs moyenne du groupe</p>
+          <div class="chart-wrap" style="height:280px"><canvas id="chart-ac-radar"></canvas></div>
         </div>
         <div class="chart-card">
           <h3>📈 Évolution du total moyen</h3>
+          <p style="font-size:11px;color:var(--c-text3);margin:-4px 0 8px">Progression compétition par compétition sur la saison</p>
           <div class="chart-wrap"><canvas id="chart-ac-evolution"></canvas></div>
         </div>
         <div class="chart-card">
           <h3>📊 Distribution des totaux</h3>
+          <p style="font-size:11px;color:var(--c-text3);margin:-4px 0 8px">Répartition des scores totaux de toutes les gymnastes</p>
           <div class="chart-wrap"><canvas id="chart-ac-box"></canvas></div>
         </div>
         <div class="chart-card">
           <h3>⚖️ Répartition D / E / Pénalités</h3>
+          <p style="font-size:11px;color:var(--c-text3);margin:-4px 0 8px">Analyse de la composition des notes (difficulté vs exécution)</p>
           <div class="chart-wrap"><canvas id="chart-ac-de"></canvas></div>
         </div>
       </div>
@@ -6661,9 +6845,43 @@ function renderAnalysesClub() {
     <div class="tab-panel ${state.acActiveTab==='ac-strengths'?'active':''}" id="ac-strengths">
       <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
 
+        <!-- ── Points faibles prioritaires (nouveau) ── -->
+        <div class="card" style="grid-column:1/-1;border-left:4px solid var(--c-red)">
+          <div class="card-header"><span>⚠️</span><h2>Points faibles prioritaires — Actions coach</h2>
+            <span style="font-size:11px;color:var(--c-text3);margin-left:auto">comparé à la moyenne du groupe ${groupe}</span>
+          </div>
+          <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+            ${agresInsights.map(a => {
+              const isWeak   = a.diff < -0.3;
+              const isStrong = a.diff >  0.3;
+              const color    = isWeak ? 'var(--c-red)' : isStrong ? 'var(--c-green)' : 'var(--c-gold)';
+              const icon     = isWeak ? '🔴' : isStrong ? '🟢' : '🟡';
+              const action   = isWeak
+                ? `Renforcer le travail ${a.code} — écart de ${Math.abs(a.diff).toFixed(2)} pts vs groupe`
+                : isStrong
+                ? `Point fort — maintenir le niveau ${a.code}`
+                : `Dans la moyenne groupe — potentiel de progression`;
+              return `<div style="background:var(--c-surface2);border-radius:10px;padding:12px 14px;
+                          border-left:3px solid ${color}">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+                  <span style="font-size:16px">${a.icon}</span>
+                  <strong style="font-size:13px">${a.code}</strong>
+                  <span style="margin-left:auto;font-size:10px;font-weight:700;color:${color}">${icon}</span>
+                </div>
+                <div style="font-size:18px;font-weight:800;color:${color}">
+                  ${a.diff>=0?'+':''}${a.diff.toFixed(2)} <span style="font-size:11px;font-weight:400;color:var(--c-text3)">vs groupe</span>
+                </div>
+                <div style="font-size:11px;color:var(--c-text3);margin-top:4px;line-height:1.4">${action}</div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+
         <!-- Heatmap agrès × compétitions -->
         <div class="card" style="grid-column:1/-1">
-          <div class="card-header"><span>🔥</span><h2>Heatmap — Notes moyennes par agrès × compétition</h2></div>
+          <div class="card-header"><span>🔥</span><h2>Heatmap — Notes moyennes par agrès × compétition</h2>
+            <span style="font-size:11px;color:var(--c-text3);margin-left:auto">Bleu foncé = note élevée</span>
+          </div>
           <div class="card-body">
             <div class="table-wrap">
               <table>
@@ -6671,35 +6889,46 @@ function renderAnalysesClub() {
                 <tbody>${heatRows}</tbody>
               </table>
             </div>
+            <p style="font-size:11px;color:var(--c-text3);margin-top:8px;font-style:italic">
+              Lecture : les colonnes les plus claires signalent les compétitions difficiles ou les absences — les lignes les plus claires identifient les agrès à travailler.
+            </p>
           </div>
         </div>
 
-        <!-- % > seuil pts par agrès -->
+        <!-- % > seuil pts par agrès (amélioré) -->
         <div class="card">
           <div class="card-header">
             <span>🎯</span>
             <h2>% gymnastes ≥ <input id="ac-pct-seuil" type="number" min="1" max="20"
-              value="${state.acPctSeuil||13}"
+              value="${state.acPctSeuil||11}"
               style="width:46px;padding:1px 4px;border-radius:4px;border:1px solid var(--c-border);
                      background:var(--c-surface2);color:var(--c-text);font-size:14px;font-weight:700;text-align:center"
-              onchange="state.acPctSeuil=Math.min(20,Math.max(1,+this.value||13));renderPage()"> pts
+              onchange="state.acPctSeuil=Math.min(20,Math.max(1,+this.value||11));renderPage()"> pts
             </h2>
           </div>
           <div class="card-body">
             ${pct13.map(a=>`
-              <div style="margin-bottom:12px">
-                <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-                  <span><strong>${a.code}</strong></span>
-                  <span style="color:${a.pct>=50?'var(--c-green)':a.pct>=30?'var(--c-gold)':'var(--c-red)'}">${a.pct}% <small style="color:var(--c-text3)">(${a.n} passages)</small></span>
+              <div style="margin-bottom:14px">
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:5px">
+                  <span style="display:flex;align-items:center;gap:6px">
+                    <strong>${a.icon} ${a.code}</strong>
+                  </span>
+                  <span style="font-weight:700;color:${a.pct>=50?'var(--c-green)':a.pct>=30?'var(--c-gold)':'var(--c-red)'}">
+                    ${a.pct}%
+                    <small style="font-weight:400;color:var(--c-text3)">(${a.n} pass.)</small>
+                  </span>
                 </div>
-                <div style="height:8px;background:var(--c-border);border-radius:4px;overflow:hidden">
-                  <div style="width:${a.pct}%;height:100%;background:${a.pct>=50?'var(--c-green)':a.pct>=30?'var(--c-gold)':'var(--c-red)'};border-radius:4px;transition:width .5s"></div>
+                <div style="height:10px;background:var(--c-border);border-radius:5px;overflow:hidden">
+                  <div style="width:${a.pct}%;height:100%;
+                       background:${a.pct>=50?'var(--c-green)':a.pct>=30?'var(--c-gold)':'var(--c-red)'};
+                       border-radius:5px;transition:width .5s"></div>
                 </div>
+                ${a.pct<30?`<div style="font-size:10px;color:var(--c-red);margin-top:3px">⚠ Priorité entraînement</div>`:''}
               </div>`).join('')}
           </div>
         </div>
 
-        <!-- Top 5 gymnastes -->
+        <!-- Top 6 gymnastes (amélioré) -->
         <div class="card">
           <div class="card-header"><span>🥇</span><h2>Top 6 gymnastes — ${state.acCat}</h2></div>
           <div class="table-wrap">
@@ -6714,46 +6943,98 @@ function renderAnalysesClub() {
 
     <!-- TAB 3 : Progression -->
     <div class="tab-panel ${state.acActiveTab==='ac-progress'?'active':''}" id="ac-progress">
-      <div class="charts-grid" style="margin-top:16px">
+
+      <!-- Tendance saison banner -->
+      ${compsSorted.length >= 2 ? `
+      <div style="margin:16px 0 20px;padding:14px 18px;border-radius:12px;
+           background:${trendDiff>=0?'rgba(24,160,88,.08)':'rgba(212,32,32,.06)'};
+           border:1.5px solid ${trendDiff>=0?'var(--c-green)':'var(--c-red)'}">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">
+          ${trendDiff>=0?'📈 Le club progresse sur la saison':'📉 Tendance en baisse sur la saison'}
+          <span style="font-size:18px;font-weight:900;color:${trendDiff>=0?'var(--c-green)':'var(--c-red)'};margin-left:10px">
+            ${trendDiff>=0?'+':''}${trendDiff.toFixed(2)} pts
+          </span>
+        </div>
+        <div style="font-size:12px;color:var(--c-text2);margin-bottom:${progressionText?'8px':'0'}">
+          Total moyen 1ère compétition : <strong>${trendFirst.toFixed(2)}</strong> pts —
+          Dernière compétition : <strong>${trendLast.toFixed(2)}</strong> pts
+        </div>
+        ${progressionText ? `<div style="font-size:12px;margin-top:6px;border-top:1px solid var(--c-border);padding-top:8px">${progressionText}</div>` : ''}
+      </div>` : ''}
+
+      <div class="charts-grid" style="margin-top:8px">
         <div class="chart-card" style="grid-column:1/-1">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px">
             <div>
               <h3 style="margin:0 0 3px">📈 Évolution des meilleures gymnastes</h3>
-              <p style="font-size:11px;color:var(--c-text3);margin:0">Seules les participations réelles sont prises en compte — absences affichées comme interruptions de courbe</p>
+              <p style="font-size:11px;color:var(--c-text3);margin:0">Seules les participations réelles — interruptions = absence en compétition</p>
             </div>
             <button id="btn-ac-scale-toggle"
-              onclick="state.acFullScale=!state.acFullScale;initCharts()"
+              onclick="state.acFullScale=!state.acFullScale;_acToggleScale()"
               style="padding:5px 12px;border-radius:6px;border:1px solid var(--c-border);
-                     background:var(--c-surface2);color:var(--c-text);font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0">
-              ${state.acFullScale ? '🔍 Échelle adaptée' : '📏 Échelle complète (0–50)'}
+                     background:var(--c-surface2);color:var(--c-text);font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0"
+              title="${state.acFullScale ? 'Passer en échelle adaptée aux données' : 'Forcer l\'échelle de 0 à 50'}">
+              ${state.acFullScale ? '🔍 Échelle adaptée aux données' : '📏 Forcer échelle 0 – 50'}
             </button>
           </div>
           <div class="chart-wrap" style="height:340px"><canvas id="chart-ac-top-gymn"></canvas></div>
+          <p style="font-size:11px;color:var(--c-text3);margin-top:8px;font-style:italic">
+            💡 Identifiez les gymnastes en progression constante et celles qui stagnent — focus sur les courbes croissantes.
+          </p>
         </div>
         <div class="chart-card">
-          <h3>📊 Évolution Note D moyenne par saison</h3>
-          <div class="chart-wrap"><canvas id="chart-ac-d-saison"></canvas></div>
+          <h3>📊 Note D moyenne par saison</h3>
+          <p style="font-size:11px;color:var(--c-text3);margin:-4px 0 8px">Difficulté — noter une hausse = chorégraphies plus ambitieuses</p>
+          <div class="chart-wrap" style="height:220px"><canvas id="chart-ac-d-saison"></canvas></div>
+          <p style="font-size:10px;color:var(--c-text3);margin-top:6px;font-style:italic">💡 Valeur cible pour progresser : augmenter la note D par entraînement de code</p>
         </div>
         <div class="chart-card">
-          <h3>📊 Évolution Note E moyenne par saison</h3>
-          <div class="chart-wrap"><canvas id="chart-ac-e-saison"></canvas></div>
+          <h3>📊 Note E moyenne par saison</h3>
+          <p style="font-size:11px;color:var(--c-text3);margin:-4px 0 8px">Exécution — noter une baisse = fautes techniques à corriger</p>
+          <div class="chart-wrap" style="height:220px"><canvas id="chart-ac-e-saison"></canvas></div>
+          <p style="font-size:10px;color:var(--c-text3);margin-top:6px;font-style:italic">💡 Plus la note E est stable, meilleure est la régularité technique</p>
         </div>
       </div>
     </div>
 
     <!-- TAB 4 : Comparaison -->
     <div class="tab-panel ${state.acActiveTab==='ac-compare'?'active':''}" id="ac-compare">
-      <div class="charts-grid" style="margin-top:16px">
+
+      <!-- Insight comparaison textuel -->
+      <div style="margin:16px 0 20px;padding:14px 18px;border-radius:12px;
+           background:var(--c-surface2);border:1px solid var(--c-border)">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px">🔍 Synthèse comparative — ${state.acCat} · Groupe ${groupe}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          ${agresInsights.map(a => {
+            const color = a.diff < -0.3 ? 'var(--c-red)' : a.diff > 0.3 ? 'var(--c-green)' : 'var(--c-gold)';
+            return `<div style="display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;
+                         background:var(--c-surface);border:1px solid ${color}33;font-size:12px">
+              ${a.icon} ${a.code}
+              <strong style="color:${color}">${a.diff>=0?'+':''}${a.diff.toFixed(2)}</strong>
+            </div>`;
+          }).join('')}
+        </div>
+        <p style="font-size:11px;color:var(--c-text3);margin-top:10px;margin-bottom:0">
+          ${agresInsights.filter(a=>a.diff < -0.3).length > 0
+            ? '⚠ Agrès prioritaires à renforcer : ' + agresInsights.filter(a=>a.diff<-0.3).map(a=>a.code).join(', ')
+            : '✅ Le club est dans la moyenne ou au-dessus sur tous les agrès'}
+        </p>
+      </div>
+
+      <div class="charts-grid">
         <div class="chart-card">
           <h3>🕸 Club vs Groupe ${groupe} — Radar</h3>
-          <div class="chart-wrap"><canvas id="chart-ac-vs-groupe"></canvas></div>
+          <p style="font-size:11px;color:var(--c-text3);margin:-4px 0 8px">Bleu = club · pointillés = moyenne groupe</p>
+          <div class="chart-wrap" style="height:340px"><canvas id="chart-ac-vs-groupe"></canvas></div>
         </div>
         <div class="chart-card">
-          <h3>📊 Club vs Groupe ${groupe} — Totaux</h3>
+          <h3>📊 Club vs Groupe ${groupe} — Totaux par agrès</h3>
+          <p style="font-size:11px;color:var(--c-text3);margin:-4px 0 8px">Comparaison directe note moyenne par note moyenne</p>
           <div class="chart-wrap"><canvas id="chart-ac-vs-bar"></canvas></div>
         </div>
         <div class="chart-card" style="grid-column:1/-1">
-          <h3>🔀 Radar comparatif — Top clubs du groupe ${groupe}</h3>
+          <h3>🔀 Comparaison par agrès — Top clubs du groupe ${groupe}</h3>
+          <p style="font-size:11px;color:var(--c-text3);margin:-4px 0 8px">Barres groupées par agrès — chaque couleur = un club. Le club sélectionné (★) est toujours en premier.</p>
           <div class="chart-wrap" style="height:320px"><canvas id="chart-ac-multi-club"></canvas></div>
         </div>
       </div>
@@ -8497,6 +8778,89 @@ function initCharts() {
 ========================================================= */
 function goAcClubPage(p) { state.acClubPage = p; renderPage(); }
 
+// Plugin inline : affiche les valeurs numériques sur les points des radars
+// Compatible Chart.js v3+ sans plugin externe
+const radarValuePlugin = {
+  id: 'radarValues',
+  afterDraw(chart) {
+    if (chart.config.type !== 'radar') return;
+    const ctx = chart.ctx;
+    chart.data.datasets.forEach((dataset, di) => {
+      const meta = chart.getDatasetMeta(di);
+      if (!meta.visible) return;
+      meta.data.forEach((point, pi) => {
+        const val = dataset.data[pi];
+        if (val == null || val === 0) return;
+        const { x, y } = point.getCenterPoint ? point.getCenterPoint() : point;
+        const angle = point.angle ?? 0;
+        // Décaler le label vers l'extérieur du point
+        const offset = 14;
+        const lx = x + Math.cos(angle - Math.PI / 2) * offset * -1;
+        const ly = y + Math.sin(angle - Math.PI / 2) * offset * -1;
+        ctx.save();
+        ctx.font = `bold 10px sans-serif`;
+        ctx.fillStyle = dataset.borderColor || '#333';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Fond blanc pour lisibilité
+        const txt = val.toFixed(2);
+        const tw = ctx.measureText(txt).width;
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.fillRect(lx - tw/2 - 2, ly - 7, tw + 4, 14);
+        ctx.fillStyle = dataset.borderColor || '#333';
+        ctx.fillText(txt, lx, ly);
+        ctx.restore();
+      });
+    });
+  }
+};
+// Enregistrer le plugin globalement
+if (typeof Chart !== 'undefined' && !Chart.registry?.plugins?.get('radarValues')) {
+  try { Chart.register(radarValuePlugin); } catch(e) {}
+}
+
+/**
+ * Bascule l'échelle du graphique "Évolution meilleures gymnastes" sans
+ * recréer entièrement le graphique (évite le warning stepSize de Chart.js).
+ * Appelé par le bouton btn-ac-scale-toggle.
+ */
+function _acToggleScale() {
+  const chartInst = Chart.getChart('chart-ac-top-gymn');
+  const btn = document.getElementById('btn-ac-scale-toggle');
+
+  if (chartInst) {
+    const useFullScale = state.acFullScale;
+    const yAxis = chartInst.options.scales.y;
+
+    if (useFullScale) {
+      // Mode 0-50 : stepSize fixe pour éviter trop de ticks
+      yAxis.min = 0;
+      yAxis.max = 52;
+      yAxis.ticks = { stepSize: 5, maxTicksLimit: 11, callback: v => v % 5 === 0 ? v : '' };
+      if (btn) btn.textContent = '🔍 Échelle adaptée aux données';
+    } else {
+      // Mode étiré : même logique que la création initiale (marge ±1.5)
+      const allVals = chartInst.data.datasets
+        .flatMap(d => d.data)
+        .filter(v => v != null && v > 0);
+      const realMin = allVals.length ? Math.min(...allVals) : 30;
+      const realMax = allVals.length ? Math.max(...allVals) : 50;
+      const MARGIN  = 1.5;
+      yAxis.min = Math.max(0, Math.round((realMin - MARGIN) * 10) / 10);
+      yAxis.max = Math.round((realMax + MARGIN) * 10) / 10;
+      yAxis.ticks = {
+        stepSize: 0.5, maxTicksLimit: 10,
+        callback: v => v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)
+      };
+      if (btn) btn.textContent = '📏 Forcer échelle 0 – 50';
+    }
+    chartInst.update('active');  // update sans animation pour une réponse immédiate
+  } else {
+    // Graphique pas encore créé (onglet pas encore visité) : re-render complet
+    initCharts();
+  }
+}
+
 function initClubCharts() {
   const { gridColor } = chartDefaults();
   const club    = state.acClub;
@@ -8523,27 +8887,54 @@ function initClubCharts() {
   const saisons = [...new Set(catData.map(r=>r.saison))].sort();
 
   // ── Vue d'ensemble : Radar ──────────────────────────────
+  // Calcul min dynamique pour le radar (centrer sur les valeurs réelles)
+  const radarClubVals  = AGRES.map(ag=>+avg(catData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)).toFixed(2));
+  const radarGroupVals = AGRES.map(ag=>+avg(groupeData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)).toFixed(2));
+  const allRadarVals   = [...radarClubVals, ...radarGroupVals].filter(v=>v>0);
+  const radarMin = allRadarVals.length ? Math.max(0, Math.floor(Math.min(...allRadarVals)) - 1) : 0;
+  const radarMax = allRadarVals.length ? Math.ceil(Math.max(...allRadarVals)) + 1 : 20;
+
   mkChart('chart-ac-radar', {
-    type: 'radar',
+    type: 'bar',
     data: {
-      labels: AGRES.map(a=>a.label),
+      labels: AGRES.map(a => `${a.icon} ${a.label}`),
       datasets: [
         {
-          label: club,
-          data: AGRES.map(ag=>+avg(catData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)).toFixed(2)),
-          borderColor: CHART_PALETTE[0], backgroundColor: CHART_PALETTE[0]+'33',
-          pointBackgroundColor: CHART_PALETTE[0]
+          label: club + ' ★',
+          data: radarClubVals,
+          backgroundColor: CHART_PALETTE[0] + 'dd',
+          borderColor: CHART_PALETTE[0],
+          borderWidth: 2, borderRadius: 5, borderSkipped: false
         },
         {
-          label: `Groupe ${groupeTag}`,
-          data: AGRES.map(ag=>+avg(groupeData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)).toFixed(2)),
-          borderColor: CHART_PALETTE[2], backgroundColor: CHART_PALETTE[2]+'22',
-          pointBackgroundColor: CHART_PALETTE[2], borderDash:[5,3]
+          label: `Moyenne Groupe ${groupeTag}`,
+          data: radarGroupVals,
+          backgroundColor: CHART_PALETTE[2] + '88',
+          borderColor: CHART_PALETTE[2],
+          borderWidth: 1.5, borderRadius: 5, borderSkipped: false
         }
       ]
     },
-    options: { responsive:true, maintainAspectRatio:false,
-      scales:{ r:{ min:0, max:20, grid:{color:gridColor}, ticks:{backdropColor:'transparent'} } } }
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: {
+        legend: { position: 'top', labels: { padding: 14, font: { size: 12, weight: '600' }, usePointStyle: true } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label} : ${ctx.parsed.y.toFixed(3)}`
+          }
+        }
+      },
+      scales: {
+        y: {
+          min: radarMin, max: radarMax,
+          grid: { color: gridColor },
+          ticks: { callback: v => v.toFixed(1) }
+        },
+        x: { grid: { color: gridColor } }
+      }
+    }
   });
 
   // ── Vue d'ensemble : Évolution total moyen ───────────────
@@ -8607,23 +8998,31 @@ function initClubCharts() {
 
     const allDates = [...new Set(catData.map(r=>r.date))].sort();
 
-    // Valeurs réelles uniquement (pas de 0 pour les absences → null)
-    const datasets = top6.map((g,i)=>({
-      label: `${g.prenom} ${g.nom} (${g.nbComps} comp.)`,
-      data: allDates.map(d=>{
-        const r = g.data.find(r=>r.date===d);
-        return (r && r.total > 0) ? r.total : null;
-      }),
-      borderColor:CHART_PALETTE[i], backgroundColor:CHART_PALETTE[i]+'22',
-      tension:.3, pointRadius:5, pointHoverRadius:7, borderWidth:2, spanGaps:false
-    }));
-
-    // Échelle Y intelligente : min/max calculés sur les valeurs réelles uniquement
+    const datasets = top6.map((g,i)=>{
+      const color = GYMN_PALETTE[i % GYMN_PALETTE.length];
+      return {
+        label: `${g.prenom} ${g.nom}`,
+        data: allDates.map(d=>{
+          const r = g.data.find(r=>r.date===d);
+          return (r && r.total > 0) ? r.total : null;
+        }),
+        borderColor:   color,
+        backgroundColor: color + '1a',
+        tension: .35, pointRadius: 5, pointHoverRadius: 8,
+        borderWidth: 2.5,
+        pointBorderWidth: 2, pointBorderColor: '#fff',
+        spanGaps: false
+      };
+    });
+    // Échelle Y étirée : marge ±1.5 pt autour des valeurs réelles
+    // Objectif : courbes bien séparées verticalement, écarts clairement visibles
     const allRealValues = datasets.flatMap(d=>d.data).filter(v=>v!=null && v>0);
     const realMin = allRealValues.length ? Math.min(...allRealValues) : 30;
     const realMax = allRealValues.length ? max(allRealValues) : 50;
-    const smartMin = Math.max(30, Math.floor(realMin) - 3);
-    const smartMax = Math.ceil(realMax) + 1;
+    const MARGIN  = 1.5;   // marge en pts au-dessus et en dessous
+    // smartMin : pas de plancher artificiel à 30 — on serre autour des données
+    const smartMin = Math.max(0, Math.round((realMin - MARGIN) * 10) / 10);
+    const smartMax = Math.round((realMax + MARGIN) * 10) / 10;
 
     const useFullScale = state.acFullScale;
     const yMin = useFullScale ? 0  : smartMin;
@@ -8635,7 +9034,30 @@ function initClubCharts() {
       options:{
         responsive:true, maintainAspectRatio:false,
         plugins:{
-          legend:{ position:'top', labels:{ font:{size:11}, padding:14 } },
+          legend:{
+            position: 'top',
+            labels: {
+              font: { size: 12, weight: '600' },
+              padding: 18,
+              usePointStyle: true,
+              pointStyle: 'rectRounded',
+              pointStyleWidth: 22,
+              boxHeight: 5,
+              // generateLabels : force fillStyle = borderColor (couleur pleine de la ligne)
+              // Chart.js utilise sinon backgroundColor (quasi-transparent → pastille claire)
+              generateLabels(chart) {
+                return chart.data.datasets.map((ds, i) => ({
+                  text:           ds.label,
+                  fillStyle:      ds.borderColor,       // couleur pleine, pas le fond transparent
+                  strokeStyle:    ds.borderColor,
+                  lineWidth:      0,
+                  hidden:         !chart.isDatasetVisible(i),
+                  datasetIndex:   i,
+                  fontColor:      undefined              // hérité du thème
+                }));
+              }
+            }
+          },
           tooltip:{
             callbacks:{
               label: ctx => {
@@ -8649,7 +9071,16 @@ function initClubCharts() {
           y:{
             min: yMin, max: yMax,
             grid:{color:gridColor},
-            ticks:{ callback:v=>v.toFixed(0) }
+            ticks:{
+              // Ticks adaptatifs selon le mode et la plage réelle
+              ...(useFullScale
+                ? { stepSize: 5, maxTicksLimit: 11 }          // 0-50 : graduations de 5
+                : { stepSize: 0.5, maxTicksLimit: 10 }         // adaptatif : graduations de 0.5
+              ),
+              callback: v => useFullScale
+                ? (v % 5 === 0 ? v.toFixed(0) : '')           // 0-50 : afficher multiples de 5
+                : (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) // adaptatif : entiers + .5
+            }
           },
           x:{grid:{color:gridColor}, ticks:{font:{size:9}, maxRotation:30}}
         }
@@ -8685,18 +9116,65 @@ function initClubCharts() {
 
   // ── Comparaison : Club vs Groupe ─────────────────────────
   if (document.getElementById('chart-ac-vs-groupe')) {
+    // Radar Club vs Groupe — min dynamique
+    const vsClubVals  = AGRES.map(ag=>+avg(catData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)).toFixed(2));
+    const vsGrpVals   = AGRES.map(ag=>+avg(groupeData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)).toFixed(2));
+    const vsAllVals   = [...vsClubVals,...vsGrpVals].filter(v=>v>0);
+    const vsRadarMin  = vsAllVals.length ? Math.max(0,Math.floor(Math.min(...vsAllVals))-1) : 0;
+    const vsRadarMax  = vsAllVals.length ? Math.ceil(Math.max(...vsAllVals))+1 : 20;
+
     mkChart('chart-ac-vs-groupe', {
-      type:'radar',
-      data:{ labels:AGRES.map(a=>a.label), datasets:[
-        { label:club,
-          data:AGRES.map(ag=>+avg(catData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)).toFixed(2)),
-          borderColor:CHART_PALETTE[0], backgroundColor:CHART_PALETTE[0]+'33', pointBackgroundColor:CHART_PALETTE[0] },
-        { label:`Groupe ${groupeTag}`,
-          data:AGRES.map(ag=>+avg(groupeData.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)).toFixed(2)),
-          borderColor:CHART_PALETTE[2], backgroundColor:CHART_PALETTE[2]+'22', pointBackgroundColor:CHART_PALETTE[2], borderDash:[5,3] }
-      ]},
-      options:{ responsive:true, maintainAspectRatio:false,
-        scales:{ r:{ min:0, max:20, grid:{color:gridColor}, ticks:{backdropColor:'transparent'} } } }
+      type: 'radar',
+      data: {
+        labels: AGRES.map(a => `${a.icon} ${a.label}`),
+        datasets: [
+          {
+            label: club + ' ★',
+            data: vsClubVals,
+            borderColor: CHART_PALETTE[0], backgroundColor: CHART_PALETTE[0]+'44',
+            borderWidth: 3,
+            pointBackgroundColor: CHART_PALETTE[0], pointRadius: 6, pointHoverRadius: 8,
+            pointBorderColor: '#fff', pointBorderWidth: 2
+          },
+          {
+            label: `Moyenne Groupe ${groupeTag}`,
+            data: vsGrpVals,
+            borderColor: CHART_PALETTE[2], backgroundColor: CHART_PALETTE[2]+'18',
+            borderWidth: 1.5, borderDash: [6,3],
+            pointBackgroundColor: CHART_PALETTE[2], pointRadius: 4,
+            pointBorderColor: '#fff', pointBorderWidth: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 400 },
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { padding: 16, font: { size: 12, weight: '600' }, usePointStyle: true, pointStyleWidth: 12 }
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label} : ${(ctx.parsed.r ?? ctx.parsed.y ?? 0).toFixed(3)}`
+            }
+          }
+        },
+        scales: {
+          r: {
+            min: vsRadarMin, max: vsRadarMax,
+            grid: { color: gridColor, lineWidth: 1 },
+            angleLines: { color: gridColor, lineWidth: 1 },
+            ticks: {
+              backdropColor: 'transparent',
+              color: 'rgba(128,128,128,.7)',
+              font: { size: 9 }, stepSize: 0.5,
+              callback: v => v % 1 === 0 ? v.toFixed(0) : ''
+            },
+            pointLabels: { font: { size: 13, weight: '700' }, padding: 8 }
+          }
+        }
+      }
     });
 
     mkChart('chart-ac-vs-bar', {
@@ -8712,29 +9190,52 @@ function initClubCharts() {
       options:{ responsive:true, maintainAspectRatio:false, scales:{y:{grid:{color:gridColor}}} }
     });
 
-    // Multi-clubs : top 4 clubs du groupe dans cette catégorie + notre club
+    // Comparatif multi-clubs : barres groupées par agrès (plus lisible que le radar)
+    // Top 7 clubs du groupe + notre club en premier
     const allClubsGr = [...new Set(groupeData.map(r=>normalizeClub(r.club)).filter(Boolean))];
     const clubRanks = allClubsGr.map(c=>{
       const d = groupeData.filter(r=>normalizeClub(r.club)===c);
       return { club:c, avg:avg(d.map(r=>r.total).filter(v=>v>0)) };
     }).sort((a,b)=>b.avg-a.avg);
-    const topClubs = [club, ...clubRanks.filter(c=>c.club!==club).slice(0,3).map(c=>c.club)];
+    const topClubs = [club, ...clubRanks.filter(c=>c.club!==club).slice(0,6).map(c=>c.club)];
+
+    // Barres groupées : X = agrès, datasets = clubs
+    const multiVals = topClubs.map((c,i) => {
+      const d = groupeData.filter(r=>normalizeClub(r.club)===c);
+      const vals = AGRES.map(ag=>+avg(d.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)).toFixed(2));
+      return {
+        label: c + (c===club?' ★':''),
+        data: vals,
+        backgroundColor: CHART_PALETTE[i % CHART_PALETTE.length] + (c===club?'dd':'88'),
+        borderColor:     CHART_PALETTE[i % CHART_PALETTE.length],
+        borderWidth: c===club ? 2 : 1,
+        borderRadius: 4
+      };
+    });
+
+    // Échelle Y dynamique
+    const multiAllVals = multiVals.flatMap(d=>d.data).filter(v=>v>0);
+    const multiMin = multiAllVals.length ? Math.max(0,Math.floor(Math.min(...multiAllVals))-1) : 0;
+    const multiMax = multiAllVals.length ? Math.ceil(Math.max(...multiAllVals))+1 : 20;
 
     mkChart('chart-ac-multi-club', {
-      type:'radar',
-      data:{ labels:AGRES.map(a=>a.label),
-        datasets: topClubs.map((c,i)=>{
-          const d = groupeData.filter(r=>normalizeClub(r.club)===c);
-          return {
-            label: c + (c===club?' ★':''),
-            data:AGRES.map(ag=>+avg(d.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)).toFixed(2)),
-            borderColor:CHART_PALETTE[i], backgroundColor:CHART_PALETTE[i]+(i===0?'44':'22'),
-            pointBackgroundColor:CHART_PALETTE[i], borderWidth: c===club?3:1.5
-          };
-        })
+      type: 'bar',
+      data: {
+        labels: AGRES.map(a => `${a.icon} ${a.label}`),
+        datasets: multiVals
       },
-      options:{ responsive:true, maintainAspectRatio:false,
-        scales:{ r:{ min:0, max:20, grid:{color:gridColor}, ticks:{backdropColor:'transparent'} } } }
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          y: { grid:{color:gridColor}, min:multiMin, max:multiMax,
+               ticks:{ callback:v=>v.toFixed(1) } },
+          x: { grid:{color:gridColor} }
+        },
+        plugins: {
+          legend: { position:'bottom', labels:{ padding:12, font:{size:11}, boxWidth:12 } },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label} : ${ctx.parsed.y.toFixed(3)}` } }
+        }
+      }
     });
   }
 }
@@ -9358,7 +9859,97 @@ function showAbout() {
 
         ${[
           {
-            ver: '1.8.2', date: '14 mai 2026', current: true,
+            ver: '1.9.8', date: '14 mai 2026', current: true,
+            items: [
+              'Correction définitive des pastilles de légende : legend.labels.generateLabels() force fillStyle=borderColor — les ronds/rectangles utilisent la couleur pleine de la courbe et non le fond transparent',
+              'Style pastille : rectRounded 22×5px — plus visible qu\'un petit rond, clairement coloré',
+              'Passage en version v1.9.8',
+            ]
+          },
+          {
+            ver: '1.9.7', date: '14 mai 2026', current: false,
+            items: [
+              'Graphique Évolution gymnastes : nouvelle palette GYMN_PALETTE dédiée — 8 couleurs saturées et bien différenciables (bleu roi, rouge cardinal, vert forêt, orange brûlé, violet, sarcelle, rose framboise, brun chocolat)',
+              'Points avec bordure blanche (2px) pour ressortir sur toutes les courbes',
+              'Légende enrichie : police 600 12px, ronds colorés 12px, couleur adaptée au thème',
+              'Label des gymnastes allégé (sans "(N comp.)" redondant)',
+              'Passage en version v1.9.7',
+            ]
+          },
+          {
+            ver: '1.9.6', date: '14 mai 2026', current: false,
+            items: [
+              'Échelle Y étirée par défaut sur le graphique Évolution des gymnastes : marge ±1.5 pt autour des valeurs réelles, plus de plancher artificiel à 30',
+              'Ticks adaptatifs : stepSize:0.5 en mode étiré (graduations 0.5 pt) pour voir les petits écarts ; stepSize:5 en mode 0-50',
+              '_acToggleScale() mise à jour pour appliquer la même logique ±1.5 en retour au mode adaptatif',
+              'Points des courbes améliorés : bordure blanche légère, hover 8px, tension 0.35',
+              'Légende avec pointStyle (ronds au lieu de rectangles) et padding généreux',
+              'Passage en version v1.9.6',
+            ]
+          },
+          {
+            ver: '1.9.5', date: '14 mai 2026', current: false,
+            items: [
+              'Correction du bouton "Échelle 0-50" dans l\'onglet Progression : appelle désormais _acToggleScale() qui utilise chart.update() au lieu de recréer entièrement le graphique',
+              'Suppression du warning Chart.js "stepSize: 1 would result in 13134 ticks" : en mode 0-50, stepSize=5 et maxTicksLimit=11 sont appliqués',
+              'Fonction _acToggleScale() : bascule entre mode adaptatif (bornes calculées sur les données) et mode fixe 0-52, avec mise à jour immédiate via chart.update("active")',
+              'Textes du bouton clarifiés : "📏 Forcer échelle 0 – 50" ↔ "🔍 Échelle adaptée aux données"',
+              'Passage en version v1.9.5',
+            ]
+          },
+          {
+            ver: '1.9.4', date: '14 mai 2026', current: false,
+            items: [
+              'Onglet Vue d\'ensemble : section "Points clés de la saison" — 3 à 5 constats automatiques (positionnement, tendance, dernière compétition, point fort, priorité entraînement)',
+              'Onglet Progression : analyse textuelle automatique des agrès en hausse/baisse entre 1ère et dernière compétition',
+              'Onglet Progression : graphiques Note D et E agrandis (220px) avec conseils coach contextuels',
+              'Polish : règles CSS uniformisées pour les titres et sous-titres des chart-card dans Analyses Club',
+              'Passage en version v1.9.4',
+            ]
+          },
+          {
+            ver: '1.9.3', date: '14 mai 2026', current: false,
+            items: [
+              'Onglet Vue d\'ensemble : remplacement du radar "Notes moyennes par agrès" par un graphique en barres groupées Club vs Groupe — bien plus lisible quand les valeurs sont proches',
+              'Club sélectionné (★) affiché avec opacité forte, moyenne groupe en barres semi-transparentes',
+              'Échelle Y dynamique centrée sur les données réelles, tooltips et légende cohérents',
+              'Passage en version v1.9.3',
+            ]
+          },
+          {
+            ver: '1.9.2', date: '14 mai 2026', current: false,
+            items: [
+              'Correction bug "undefined VT/UB/BB/FX" dans le graphique % gymnastes ≥ pts : icon et label désormais inclus dans chaque entrée pct13',
+              'Radars agrandis (340px de hauteur) pour une meilleure lisibilité',
+              'Plugin radarValues : valeurs numériques affichées directement sur chaque point des radars (fond blanc pour contraste)',
+              'Options radars améliorées : ticks adaptés, légende avec point style, stepSize 0.5, pointLabels plus grands',
+              'Passage en version v1.9.2',
+            ]
+          },
+          {
+            ver: '1.9.1', date: '14 mai 2026', current: false,
+            items: [
+              'Graphique % gymnastes : valeur par défaut corrigée à 11 pts (était 13)',
+              'Radars "Vue d\'ensemble" et "Club vs Groupe" : échelle Y dynamique (min calculé sur les données réelles), points agrandis avec bordure blanche, labels avec icône, tooltips enrichis',
+              'Radar comparatif multi-clubs remplacé par des barres groupées par agrès (bien plus lisible avec 4-7 clubs)',
+              'Barres groupées : club sélectionné (★) toujours en premier avec opacité plus forte, échelle Y adaptée',
+              'Passage en version v1.9.1',
+            ]
+          },
+          {
+            ver: '1.9.0', date: '14 mai 2026', current: false,
+            items: [
+              'Analyses Club niveau 2 Coach : 4 onglets entièrement améliorés',
+              'Onglet Vue d\'ensemble : indicateurs de positionnement (rang dans le groupe, % top, écart vs moyenne groupe) et tendance saison (1ère → dernière compétition)',
+              'Onglet Forces & Faiblesses : section "Points faibles prioritaires" avec carte par agrès (rouge/jaune/vert vs groupe), heatmap annotée, barres % avec indicateur "Priorité entraînement"',
+              'Onglet Progression : banner tendance saison (progression ou régression en pts), insights coach sous le graphique évolution',
+              'Onglet Comparaison : synthèse comparative textuelle avec pastilles colorées par agrès et liste des agrès prioritaires',
+              'Sous-titres explicatifs ajoutés sous chaque graphique pour aider l\'interprétation',
+              'Passage en version v1.9.0',
+            ]
+          },
+          {
+            ver: '1.8.2', date: '14 mai 2026', current: false,
             items: [
               'Filtre Catégorie ajouté sur la page Accueil (state.homeFilterCategory), fonctionnant en combinaison avec le filtre Saison',
               'Double dropdown Saison + Catégorie côte à côte — les catégories s\'adaptent dynamiquement à la saison sélectionnée',
@@ -11066,7 +11657,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
-const APP_VERSION = '1.8.2';
+const APP_VERSION = '1.9.8';
 
 // Mettre à jour l'affichage de la version dès que le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
