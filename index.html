@@ -414,6 +414,8 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
 .note-low  { color: var(--c-red); font-weight: 600; }
 .gymnaste-link { color: var(--c-blue); cursor: pointer; font-weight: 600; }
 .gymnaste-link:hover { text-decoration: underline; }
+.club-link { color: var(--c-blue); cursor: pointer; }
+.club-link:hover { text-decoration: underline; color: var(--c-blue-dark,#003080); }
 
 /* ═══════════════════════════════════════════════════════════
    GYMNASTE FICHE
@@ -1176,6 +1178,10 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
   <div class="nav-item" data-page="gymnastes_liste">
     <span class="nav-icon">🤸</span><span class="nav-label">Gymnastes</span>
     <span class="nav-badge" id="nav-gymnliste-count">0</span>
+  </div>
+  <div class="nav-item" data-page="clubs_liste">
+    <span class="nav-icon">🏟</span><span class="nav-label">Clubs</span>
+    <span class="nav-badge" id="nav-clubs-count">0</span>
   </div>
   <div class="nav-item" data-page="competitions">
     <span class="nav-icon">🏆</span><span class="nav-label">Compétitions</span>
@@ -2653,6 +2659,7 @@ function updateNavBadges() {
   setEl('nav-clubs-liste-count', clubCount);
   setEl('nav-gymnliste-count',   gymnCount);
   setEl('nav-club-count',        clubCount);
+  setEl('nav-clubs-count',       clubCount);
   setEl('nav-history-count',     state.importHistory.length);
 }
 function uniqueGymnastes(results) {
@@ -3386,6 +3393,41 @@ function parsePastedTable(text, meta) {
    NAVIGATION — navigate() + helpers de routing
 ========================================================= */
 function navigate(page, extra={}) {
+  // ── Historique de navigation ──────────────────────────────────────────
+  // Empiler la page courante AVANT de changer, sauf :
+  //   • si on est en train de faire un goBack() (évite les doublons)
+  //   • si on revient sur la même page (rechargement de filtre)
+  //   • si la page courante n'est pas encore initialisée
+  // ── Gestion de l'historique de navigation ──────────────────────────────
+  if (!_navGoingBack && state.currentPage && state.currentPage !== page) {
+    if (_FICHE_PAGES.has(page)) {
+      // → On entre dans une fiche : empiler la page COURANTE
+      // (pas la destination — on veut pouvoir revenir d'où on vient)
+      const last = _navHistory[_navHistory.length - 1];
+      const curEntry = {
+        page:     state.currentPage,
+        gymnaste: state.currentGymnaste ? { ...state.currentGymnaste } : null,
+        club:     state.currentClub     || null,
+        comp:     state.currentComp     || null,
+        groupe:   state.currentGroupe   || null,
+      };
+      // Anti-doublon : ne pas empiler si identique au sommet
+      if (!last || last.page !== curEntry.page) {
+        _navHistory.push(curEntry);
+        // Limite 12 entrées
+        if (_navHistory.length > 12) _navHistory.shift();
+        console.debug('[nav] push', curEntry.page, '— pile:', _navHistory.length);
+      }
+    } else {
+      // → Navigation vers une page principale (sidebar, listes…)
+      // Réinitialiser la pile : nouveau point de départ propre
+      if (_navHistory.length) {
+        console.debug('[nav] reset pile (→ page principale:', page + ')');
+        _navHistory = [];
+      }
+    }
+  }
+
   // Forcer un render complet lors de la navigation vers une nouvelle page
   // (même si la clé calculée serait identique, la page DOM est différente)
   _lastRenderKey = '';
@@ -3455,6 +3497,113 @@ const PAGE_RENDERERS = {
   gymnaste_fiche:     renderGymnastesFiche,
   groupe:             renderGroupe,
 };
+
+// ═══════════════════════════════════════════════════════════════════════
+// HISTORIQUE DE NAVIGATION
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Principe :
+//   • _navHistory est une pile LIFO (max 12 entrées)
+//   • navigate() y pousse la page courante UNIQUEMENT si on va vers une fiche
+//   • goBack() dépile et restaure la page + l'état (gymnaste/club/comp/groupe)
+//   • Cliquer un item de la sidebar vide la pile (nouveau point de départ)
+//
+// Flux garanti :
+//   Clubs → Fiche Club → Fiche Comp → Fiche Gymnaste
+//       empile clubs_liste  empile club_fiche  empile comp_fiche
+//   goBack() × 3 → comp_fiche → club_fiche → clubs_liste
+// ═══════════════════════════════════════════════════════════════════════
+
+let _navHistory    = [];   // pile LIFO
+let _navGoingBack  = false; // verrou : évite le re-push pendant un goBack()
+
+// Pages "fiche" (profondeur) — on y entre depuis une page ou une autre fiche
+const _FICHE_PAGES = new Set(['gymnaste_fiche', 'club_fiche', 'comp_fiche']);
+
+// Libellés pour le bouton retour
+const _NAV_LABELS = {
+  home:              'Accueil',
+  gymnastes_liste:   'Gymnastes',
+  clubs_liste:       'Clubs',
+  competitions:      'Compétitions',
+  equipes:           'Classements par Équipes',
+  gymnastes:         'Classements Individuels',
+  classements:       'Classements par Agrès',
+  analyses:          'Analyses Globales',
+  analyses_detail:   'Analyses Détaillées',
+  analyses_club:     'Analyses Club',
+  groupe:            'Par Groupe',
+  gymnaste_fiche:    'Fiche Gymnaste',
+  club_fiche:        'Fiche Club',
+  comp_fiche:        'Fiche Compétition',
+  historique:        'Historique',
+  export_bdd:        'Export BDD',
+  gestion_users:     'Gestion utilisateurs',
+  migration_supabase:'Migration Supabase',
+};
+
+/** Libellé lisible d'une entrée de l'historique. */
+/**
+ * Retourne le libellé du bouton retour pour une entrée d'historique.
+ * Utilise les données snapshotées au moment de l'empilement
+ * (pas l'état courant, qui peut avoir changé).
+ *
+ * Exemples :
+ *   clubs_liste → "Clubs"
+ *   club_fiche  → "Montpellier Gym"   (nom snapshoté)
+ *   comp_fiche  → "Finale Régionale"  (nom résolu)
+ *   gymnaste_fiche → "Marie Dupont"
+ */
+function getBackButtonLabel(entry) {
+  const page = entry.page;
+  // Fiches : libellé contextuel avec le nom réel
+  if (page === 'gymnaste_fiche' && entry.gymnaste) {
+    const n = `${entry.gymnaste.prenom || ''} ${entry.gymnaste.nom || ''}`.trim();
+    return n || 'Fiche Gymnaste';
+  }
+  if (page === 'club_fiche' && entry.club)
+    return entry.club;
+  if (page === 'comp_fiche' && entry.comp) {
+    const c = state.competitions.find(x => x.id === entry.comp);
+    return c ? c.nom : 'Fiche Compétition';
+  }
+  // Pages principales : libellé court depuis le dictionnaire
+  return _NAV_LABELS[page] || 'Retour';
+}
+
+/**
+ * Rembobine d'un cran.
+ * Restaure la page ET l'état snapshot (gymnaste, club, comp, groupe).
+ * Fallback vers 'gymnastes_liste' si la pile est vide.
+ */
+function goBack() {
+  const prev = _navHistory.pop();
+  if (!prev) {
+    console.debug('[nav] goBack — pile vide, fallback gymnastes_liste');
+    navigate('gymnastes_liste');
+    return;
+  }
+  console.debug('[nav] goBack →', prev.page, _navHistory.length, 'restant(s)');
+  // Restaurer l'état snapshoté
+  if (prev.gymnaste !== undefined) state.currentGymnaste = prev.gymnaste;
+  if (prev.club     !== undefined) state.currentClub     = prev.club;
+  if (prev.comp     !== undefined) state.currentComp     = prev.comp;
+  if (prev.groupe   !== undefined) state.currentGroupe   = prev.groupe;
+  // Verrou pour que navigate() ne re-pousse pas pendant le retour
+  _navGoingBack = true;
+  navigate(prev.page);
+  _navGoingBack = false;
+}
+
+/**
+ * Libellé du bouton retour (sommet de la pile).
+ * Retourne '← Retour' si la pile est vide.
+ */
+function goBackLabel() {
+  const prev = _navHistory[_navHistory.length - 1];
+  if (!prev) return 'Retour';
+  return getBackButtonLabel(prev);
+}
 
 // Clé de render précédente — skip si identique
 let _lastRenderKey = '';
@@ -4056,17 +4205,12 @@ function renderCompFiche() {
   return `
     <!-- Fil d'Ariane -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-      ${state.gymnPrevPage === 'gymnaste_fiche' && state.currentGymnaste
-        ? `<button class="btn btn-outline btn-sm" onclick="navigate('gymnaste_fiche')">← ${state.currentGymnaste.prenom} ${state.currentGymnaste.nom}</button>`
-        : state.gymnPrevPage === 'club_fiche' && state.currentClub
-        ? `<button class="btn btn-outline btn-sm" onclick="navigate('club_fiche')">← ${state.currentClub}</button>`
-        : `<button class="btn btn-outline btn-sm" onclick="navigate('competitions')">← Compétitions</button>`
-      }
+      <div class="back-btn" onclick="goBack()">← ${goBackLabel()}</div>
       <span style="color:var(--c-text3);font-size:13px">›</span>
       <span style="font-size:13px;color:var(--c-text2)">${compNom}</span>
     </div>
 
-    <!-- En-tête compétition -->
+        <!-- En-tête compétition -->
     <div class="section-title">🏅 ${compNom}</div>
     <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
       <span class="group-tag ${compGroupe.toLowerCase()}">${compGroupe}</span>
@@ -4243,7 +4387,7 @@ function renderGymnastesListe() {
           <strong>${g.prenom} ${g.nom}</strong>
         </span>
       </td>
-      <td style="font-size:13px">${g.club}</td>
+      <td class="club-link" style="font-size:13px" onclick="openClubFiche('${g.club}')">${g.club}</td>
       <td style="font-size:12px">${g.categorie}</td>
       <td><span class="group-tag ${(g.groupe||'').toLowerCase()}">${g.groupe||'—'}</span></td>
       <td style="text-align:center;color:var(--c-text2);font-size:13px">${g.annee||'—'}</td>
@@ -4350,7 +4494,7 @@ function renderGymnastes() {
     return `<tr>
       <td><span class="rank-badge ${rankClass}">${r.rang}</span></td>
       <td class="gymnaste-link" onclick="openGymnastesFiche('${r.nom}','${r.prenom}')">${r.prenom} ${r.nom}</td>
-      <td>${r.club}</td>
+      <td class="club-link" onclick="openClubFiche('${r.club}')">${r.club}</td>
       <td>${r.categorie}</td>
       <td style="text-align:center;font-weight:600;color:var(--c-text2)">${annee}</td>
       <td><span class="group-tag ${r.groupe.toLowerCase()}">${r.groupe}</span></td>
@@ -4422,9 +4566,13 @@ function renderGymnastes() {
 /* =========================================================
    PAGE: GYMNASTE FICHE
 ========================================================= */
-function openGymnastesFiche(nom, prenom) {
-  // Mémoriser la page d'origine pour le bouton "Retour"
-  state.gymnPrevPage = state.currentPage || 'gymnastes_liste';
+function openGymnastesFiche(nom, prenom, fromPage) {
+  // Mémoriser la page d'origine pour le bouton "Retour".
+  // fromPage est optionnel : permet de forcer l'origine quand on sait
+  // qu'on viendra d'une page précise (ex: club_fiche, comp_fiche).
+  // Sinon on lit state.currentPage (fiable car le clic se produit sur
+  // la page courante avant la navigation).
+  state.gymnPrevPage = fromPage || state.currentPage || 'gymnastes_liste';
   // Stocker la clé normalisée pour un lookup insensible à la casse
   state.currentGymnaste = { nom, prenom };
   navigate('gymnaste_fiche');
@@ -4448,26 +4596,20 @@ function toggleDetailAccordion(id) {
 
 function goBackFromGymn() {
   const prev = state.gymnPrevPage;
-  // Mapping page → label pour le breadcrumb
-  const PAGE_LABELS = {
-    'gymnastes_liste': 'Gymnastes',
-    'gymnastes':       'Classements Individuels',
-    'classements':     'Classements Agrès',
-    'equipes':         'Classements Équipes',
-    'competitions':    'Compétitions',
-    'analyses':        'Analyses Globales',
-    'analyses_club':   'Analyses Club',
-    'analyses_detail': 'Analyses Détaillées',
-    'groupe':          'Par Groupe',
-  };
-  navigate(PAGE_LABELS[prev] ? prev : 'gymnastes_liste');
+  // Pages reconnues comme destinations de retour valides
+  const VALID_PAGES = new Set([
+    'gymnastes_liste', 'gymnastes', 'classements', 'equipes',
+    'competitions', 'analyses', 'analyses_club', 'analyses_detail',
+    'groupe', 'club_fiche', 'clubs_liste', 'comp_fiche',
+  ]);
+  navigate(VALID_PAGES.has(prev) ? prev : 'gymnastes_liste');
 }
 
 function gymnPrevLabel() {
   const PAGE_LABELS = {
     'gymnastes_liste': 'Gymnastes',
     'gymnastes':       'Classements Individuels',
-    'classements':     'Classements Agrès',
+    'classements':     'Classements par Agrès',
     'equipes':         'Classements Équipes',
     'competitions':    'Compétitions',
     'analyses':        'Analyses Globales',
@@ -4475,6 +4617,8 @@ function gymnPrevLabel() {
     'analyses_detail': 'Analyses Détaillées',
     'groupe':          'Par Groupe',
     'comp_fiche':      'Fiche Compétition',
+    'club_fiche':      'Fiche Club',
+    'clubs_liste':     'Clubs',
   };
   return PAGE_LABELS[state.gymnPrevPage] || 'Retour';
 }
@@ -4640,7 +4784,7 @@ function renderGymnastesFiche() {
   return `
     <!-- Fil d'Ariane + Retour contextuel -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-      <button class="btn btn-outline btn-sm" onclick="goBackFromGymn()">← ${gymnPrevLabel()}</button>
+      <div class="back-btn" onclick="goBack()">← ${goBackLabel()}</div>
       <span style="color:var(--c-text3);font-size:13px">›</span>
       <span style="font-size:13px;color:var(--c-text2);font-weight:600">${prenom} ${nom}</span>
     </div>
@@ -4920,7 +5064,9 @@ function renderEquipes() {
    pour regrouper Castelnau le lez / Castelnau le lez 1 / 2 etc.
 ========================================================= */
 function openClubFiche(nom) {
-  state.clubPrevPage = state.currentPage || 'equipes'; // mémoriser la page d'origine
+  // Mémoriser la page d'origine pour le bouton "Retour"
+  // Si on vient de clubs_liste, y revenir ; sinon page courante ou equipes
+  state.clubPrevPage = state.currentPage || 'clubs_liste';
   state.currentClub = normalizeClub(nom);
   navigate('club_fiche');
 }
@@ -5222,7 +5368,7 @@ function renderClubFiche() {
   const equipeVariants = equipeNoms.filter(e => normalizeClub(e) === nom && e !== nom);
 
   return `
-    <div class="back-btn" onclick="navigate(state.clubPrevPage||'equipes')">← ${state.clubPrevPage==='clubs_liste'?'Clubs':'Classements Équipes'}</div>
+    <div class="back-btn" onclick="goBack()">← ${goBackLabel()}</div>
 
     <div class="gymnaste-header" style="margin-bottom:20px">
       <div class="gymnaste-avatar" style="width:72px;height:72px;font-size:26px;border-radius:12px">🏟</div>
@@ -5243,6 +5389,80 @@ function renderClubFiche() {
     </div>
 
     ${statsHtml}
+
+    <!-- ── Top Gymnastes du club ── -->
+    ${(() => {
+      // Meilleur résultat par gymnaste (sur toutes saisons)
+      const gymMap = {};
+      clubResults.forEach(r => {
+        const k = gymKey(r.nom, r.prenom);
+        if (!gymMap[k] || r.total > gymMap[k].total) gymMap[k] = r;
+      });
+      const top = Object.values(gymMap)
+        .sort((a,b) => b.total - a.total)
+        .slice(0, 10);
+      if (!top.length) return '';
+      // Meilleur par agrès (all-time)
+      const agresRecords = {};
+      AGRES.forEach(ag => {
+        const best = [...clubResults]
+          .filter(r => r.agres?.[ag.code]?.final > 0)
+          .sort((a,b) => (b.agres[ag.code].final) - (a.agres[ag.code].final))[0];
+        if (best) agresRecords[ag.code] = best;
+      });
+      const agresRecordsHtml = AGRES.map(ag => {
+        const b = agresRecords[ag.code];
+        if (!b) return '';
+        const nomSafe   = b.nom.replace(/'/g,"\'");
+        const prenomSafe= b.prenom.replace(/'/g,"\'");
+        return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--c-border)">
+          <span style="width:36px;text-align:center;font-size:13px;font-weight:700;color:var(--c-text2)">${ag.icon} ${ag.code}</span>
+          <strong style="font-size:15px;color:var(--c-blue)">${fmt(b.agres[ag.code].final)}</strong>
+          <span class="gymnaste-link" style="font-size:12px" onclick="openGymnastesFiche('${nomSafe}','${prenomSafe}')">${b.prenom} ${b.nom}</span>
+          <span style="font-size:11px;color:var(--c-text3);margin-left:auto">${b.categorie} · ${b.saison||''}</span>
+        </div>`;
+      }).join('');
+      const topRows = top.map((r,i) => {
+        const rankClass = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other';
+        const nomSafe   = r.nom.replace(/'/g,"\'");
+        const prenomSafe= r.prenom.replace(/'/g,"\'");
+        return `<tr>
+          <td><span class="rank-badge ${rankClass}">${i+1}</span></td>
+          <td class="gymnaste-link" onclick="openGymnastesFiche('${nomSafe}','${prenomSafe}')">${r.prenom} ${r.nom}</td>
+          <td><span class="group-tag ${r.groupe.toLowerCase()}">${r.groupe}</span></td>
+          <td style="font-size:12px;color:var(--c-text3)">${r.categorie}</td>
+          ${AGRES.map(ag => {
+            const v = r.agres?.[ag.code]?.final || 0;
+            return `<td class="${noteColor(v)}">${v>0?fmt(v):'—'}</td>`;
+          }).join('')}
+          <td><strong class="${noteColor(r.total,60)}">${fmt(r.total)}</strong></td>
+        </tr>`;
+      }).join('');
+      return `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+        <div class="card">
+          <div class="card-header"><span>🏅</span><h2>Top 10 gymnastes</h2>
+            <span style="margin-left:auto;font-size:12px;color:var(--c-text3)">Meilleur total toutes saisons</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>#</th><th>Gymnaste</th><th>Gr.</th><th>Catégorie</th>
+                ${AGRES.map(ag=>`<th>${ag.icon} ${ag.code}</th>`).join('')}
+                <th>Total</th>
+              </tr></thead>
+              <tbody>${topRows}</tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span>🏆</span><h2>Records par agrès</h2>
+            <span style="margin-left:auto;font-size:12px;color:var(--c-text3)">Meilleur score all-time</span>
+          </div>
+          <div style="padding:12px 16px">${agresRecordsHtml || '<p style="color:var(--c-text3);font-size:13px">Aucune donnée</p>'}</div>
+        </div>
+      </div>`;
+    })()}
 
     <!-- Onglets fiche club -->
     <div class="tabs" style="margin-bottom:0">
@@ -5360,7 +5580,7 @@ function renderClassements() {
     return `<tr>
       <td><span class="rank-badge ${rankClass}">${i+1}</span></td>
       <td class="gymnaste-link" onclick="openGymnastesFiche('${r.nom}','${r.prenom}')">${r.prenom} ${r.nom}</td>
-      <td>${r.club}</td>
+      <td class="club-link" onclick="openClubFiche('${r.club}')">${r.club}</td>
       <td>${r.categorie}</td>
       <td><span class="group-tag ${r.groupe.toLowerCase()}">${r.groupe}</span></td>
       <td style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.compNom}">${r.compNom}</td>
@@ -7104,7 +7324,7 @@ function renderGroupe() {
       <td><span class="rank-badge ${rankClass}">${r.rang}</span></td>
       <td class="gymnaste-link" onclick="openGymnastesFiche('${r.nom.replace(/'/g,"\'")}','${r.prenom.replace(/'/g,"\'")}')">
         ${r.prenom} ${r.nom}</td>
-      <td>${r.club}</td>
+      <td class="club-link" onclick="openClubFiche('${r.club}')">${r.club}</td>
       <td style="font-size:12px">${r.categorie}</td>
       <td style="font-size:12px;color:var(--c-text2)">${fmtDate(r.date)}</td>
       ${AGRES.map(ag=>`<td style="font-size:12px">${fmt(r.agres?.[ag.code]?.final)}</td>`).join('')}
@@ -8552,7 +8772,68 @@ function showAbout() {
 
         ${[
           {
-            ver: '1.6.5', date: '14 mai 2026', current: true,
+            ver: '1.6.11', date: '14 mai 2026', current: true,
+            items: [
+              'Renommage _navLabel → getBackButtonLabel (API claire et documentée)',
+              'Libellés contextuels enrichis : "← Montpellier Gym", "← Finale Régionale", "← Marie Dupont" — lus depuis le snapshot, jamais depuis l\'état courant',
+              'Harmonisation visuelle : le bouton retour utilise .back-btn dans les 3 fiches (gymnaste, club, compétition)',
+              'Passage en version v1.6.11',
+            ]
+          },
+          {
+            ver: '1.6.10', date: '14 mai 2026', current: false,
+            items: [
+              'Refonte du système d\'historique de navigation : logique clarifiée, verrou renommé _navGoingBack, anti-doublon au sommet de pile',
+              'navigate() n\'empile que la page courante quand on entre dans une fiche — et remet à zéro la pile sur navigation principale',
+              'goBack() restaure le snapshot complet (gymnaste, club, compétition, groupe) et log en console.debug pour le debug',
+              'goBackLabel() lit maintenant le snapshot de l\'entrée historique (et non l\'état courant) pour un libellé toujours exact',
+              'Limite réduite à 12 entrées — suffisant pour tout parcours réaliste',
+              'Passage en version v1.6.10',
+            ]
+          },
+          {
+            ver: '1.6.9', date: '14 mai 2026', current: false,
+            items: [
+              'Système d\'historique de navigation : _navHistory empile chaque page visitée avant une fiche',
+              'goBack() générique : dépile et restaure la page + l\'état (gymnaste, club, compétition) — fiable sur N niveaux',
+              'goBackLabel() : libellé contextuel dynamique ("← Fiche Club", "← Clubs", "← Compétitions"…)',
+              'navigate() réinitialisé la pile sur les pages principales pour éviter les retours parasites',
+              'Boutons retour de renderGymnastesFiche, renderClubFiche et renderCompFiche remplacés par goBack()',
+              'Passage en version v1.6.9',
+            ]
+          },
+          {
+            ver: '1.6.8', date: '14 mai 2026', current: false,
+            items: [
+              'Correction du bouton Retour dans la fiche gymnaste : reconnaît maintenant club_fiche, clubs_liste et comp_fiche comme pages d\'origine valides',
+              'goBackFromGymn() utilise un Set de pages valides plutôt qu\'un mapping label → évite les faux fallbacks',
+              'gymnPrevLabel() complété : "Fiche Club" et "Clubs" ajoutés aux libellés contextuels',
+              'openGymnastesFiche() accepte un 3e paramètre fromPage optionnel pour forcer l\'origine',
+              'Navigation multi-niveaux Clubs → Fiche Club → Fiche Gymnaste → Retour : fonctionne correctement',
+              'Passage en version v1.6.8',
+            ]
+          },
+          {
+            ver: '1.6.7', date: '14 mai 2026', current: false,
+            items: [
+              'Fiche Club enrichie : ajout de la section Top 10 gymnastes (meilleur résultat par gymnaste, toutes saisons) avec notes par agrès',
+              'Ajout du tableau Records par agrès (meilleur score all-time par appareil + gymnaste qui l\'a réalisé)',
+              'Bouton retour intelligent : revient vers Clubs, Gymnastes, Classements ou Groupe selon l\'origine de la navigation',
+              'openClubFiche() mémorise correctement la page d\'origine pour le retour',
+              'Passage en version v1.6.7',
+            ]
+          },
+          {
+            ver: '1.6.6', date: '14 mai 2026', current: false,
+            items: [
+              'Ajout de la section "Clubs" dans la sidebar (Navigation, visible par tous les rôles) avec badge du nombre de clubs',
+              'Noms de clubs cliquables dans tous les tableaux : Classements Individuels, Liste Gymnastes, Classements par Agrès, Page Groupe — ouvrent directement la fiche du club',
+              'La fiche Club existante est désormais accessible depuis la navigation principale',
+              'Passage en version v1.6.6',
+            ]
+          },
+          {
+            ver: '1.6.5', date: '14 mai 2026', current: false,
             items: [
               'Amélioration visuelle du bouton "Renvoyer l\'email de confirmation" (bleu clair, plus visible)',
               'Message d\'erreur clarifié quand un email est déjà enregistré',
@@ -10127,7 +10408,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
-const APP_VERSION = '1.6.5';
+const APP_VERSION = '1.6.11';
 
 // Mettre à jour l'affichage de la version dès que le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
