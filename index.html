@@ -36,7 +36,7 @@
   --c-shadow:    rgba(0,63,138,0.12);
   --r-card:      12px;
   --r-btn:       8px;
-  --sidebar-w:   240px;
+  --sidebar-w:   260px;
   --font-head:   'Barlow Condensed', sans-serif;
   --font-body:   'Barlow', sans-serif;
   --trans:       all .2s ease;
@@ -198,24 +198,52 @@ body {
   color: rgba(255,255,255,.4); font-weight: 600;
 }
 .nav-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 18px;
-  color: rgba(255,255,255,.75);
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 16px 9px 14px;
+  min-height: 38px;
+  color: rgba(255,255,255,.78);
   cursor: pointer;
   border-left: 3px solid transparent;
-  transition: var(--trans);
-  font-size: 14px; font-weight: 500;
+  transition: all .2s ease;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
   user-select: none;
 }
 .nav-item:hover { color: #fff; background: rgba(255,255,255,.1); border-left-color: rgba(255,255,255,.3); }
 .nav-item.active { color: #fff; background: rgba(255,255,255,.18); border-left-color: var(--c-gold); font-weight: 600; }
-.nav-item .nav-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+.nav-item .nav-icon {
+  width: 22px;
+  min-width: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1;
+}
+.nav-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
 .nav-badge {
-  margin-left: auto; background: var(--c-red); color: #fff;
+  margin-left: auto; flex-shrink: 0;
+  background: var(--c-red); color: #fff;
   font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px;
 }
 
-.group-sub .nav-item { padding-left: 34px; font-size: 13px; }
+/* Par Groupe : même padding que navigation standard (pas d'indentation supplémentaire) */
+.group-sub .nav-item { font-size: 13px; }
+
+/* nav-item-danger : style discret, rouge au hover (ex: Supprimer) */
+.nav-item-danger:hover { color: var(--c-red) !important; background: rgba(212,32,32,.08) !important; border-left-color: var(--c-red) !important; }
+/* nav-item-sync : accent vert au hover (ex: Recharger les données) */
+.nav-item-sync:hover { color: #7dd3b0 !important; background: rgba(24,160,88,.12) !important; border-left-color: #4dcc88 !important; }
 
 .sidebar-footer {
   margin-top: auto;
@@ -339,6 +367,8 @@ input[type="search"] { min-width: 220px; }
    DATA TABLE
 ═══════════════════════════════════════════════════════════ */
 .table-wrap { overflow-x: auto; overflow-y: visible; border-radius: var(--r-card); border: 1px solid var(--c-border); }
+/* Tableaux à défilement interne — lignes du viewport uniquement rendues via JS */
+
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 thead tr { background: var(--c-blue); color: #fff; }
 thead th {
@@ -909,6 +939,38 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
     .role-badge.admin   { background:#fee;color:#c00; }
     .role-badge.coach   { background:#e8f4ff;color:#004fa0; }
     .role-badge.lecteur { background:#eee;color:#666; }
+
+    /* ── Écrans Register + Succès (même fond que login) ────── */
+    #register-screen, #register-success-screen {
+      position:fixed;inset:0;z-index:9999;
+      background:linear-gradient(145deg,#001433 0%,#002b6b 45%,#004fa0 100%);
+      display:none;align-items:center;justify-content:center;
+      font-family:var(--font-body,sans-serif);overflow:hidden;
+    }
+    #register-screen::before, #register-success-screen::before {
+      content:'🤸‍♀️  🤸  🏅  🤸‍♀️  🏆  🤸  🏅  🤸‍♀️';
+      position:absolute;top:0;left:0;right:0;bottom:0;
+      font-size:48px;opacity:.04;display:flex;align-items:center;
+      justify-content:center;flex-wrap:wrap;gap:60px;
+      pointer-events:none;letter-spacing:20px;line-height:120px;
+    }
+    #register-screen.visible, #register-success-screen.visible {
+      display:flex;animation:fadeIn .35s ease;
+    }
+    /* Lien "Créer un compte" / "Se connecter" dans les cartes login */
+    .login-register-link {
+      text-align:center;margin-top:18px;font-size:13px;color:#666;
+    }
+    .login-register-link a {
+      color:#004fa0;font-weight:600;cursor:pointer;text-decoration:none;
+    }
+    .login-register-link a:hover { text-decoration:underline; }
+    /* Icône succès */
+    .register-success-icon { font-size:56px;text-align:center;margin-bottom:16px; }
+    .register-success-title { font-size:22px;font-weight:800;color:#002b5c;text-align:center;margin-bottom:10px; }
+    .register-success-text { font-size:14px;color:#555;text-align:center;line-height:1.6;margin-bottom:8px; }
+    .register-success-email { font-weight:700;color:#004fa0; }
+    .register-success-note { font-size:12px;color:#999;text-align:center;margin-top:12px; }
   </style>
 </head>
 <body>
@@ -960,11 +1022,110 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
         💾 Continuer en mode hors-ligne (SQLite local)
       </button>
 
+      <div class="login-register-link">
+        Pas encore de compte ?
+        <a onclick="showRegisterScreen()">Créer un compte</a>
+      </div>
+
       <div class="login-version" id="login-version">UFOLEP GAF Analytics · vX.X.X</div>
     </div>
   </div>
 
 
+<!-- ═══════════════════════════════════════════════════════════
+     ÉCRAN D'INSCRIPTION
+═══════════════════════════════════════════════════════════ -->
+  <div id="register-screen">
+    <div class="login-card">
+      <!-- Logo UFOLEP -->
+      <div class="login-logo">
+        <div class="login-logo-badge">
+          <div class="flag"><div></div><div></div><div></div></div>
+          <div>
+            <div class="login-logo-text">UFOLEP</div>
+            <div class="login-logo-sub">GAF ANALYTICS</div>
+          </div>
+        </div>
+        <h2>Créer un compte</h2>
+        <p>Accès en lecture — confirmation par email</p>
+      </div>
+
+      <!-- Messages erreur / info -->
+      <div class="login-error" id="register-error"><span>⛔</span><span id="register-error-text"></span></div>
+
+      <!-- Champs -->
+      <div class="login-field">
+        <label><span>📧</span> Adresse email</label>
+        <input type="email" id="register-email" placeholder="prenom.nom@ufolep.fr"
+          autocomplete="email" onkeydown="if(event.key==='Enter')doRegister()">
+      </div>
+      <div class="login-field">
+        <label><span>🔑</span> Mot de passe</label>
+        <input type="password" id="register-password" placeholder="Au moins 6 caractères"
+          autocomplete="new-password" onkeydown="if(event.key==='Enter')doRegister()">
+      </div>
+      <div class="login-field">
+        <label><span>🔑</span> Confirmer le mot de passe</label>
+        <input type="password" id="register-password2" placeholder="••••••••"
+          autocomplete="new-password" onkeydown="if(event.key==='Enter')doRegister()">
+      </div>
+
+      <button class="login-btn" id="register-btn" onclick="doRegister()">
+        Créer mon compte →
+      </button>
+
+      <div style="margin-top:18px;padding:10px 14px;background:#fffbea;border:1px solid #f0d070;
+        border-radius:8px;font-size:12px;color:#7a5c00;text-align:left;line-height:1.5">
+        ℹ️ <strong>Information :</strong> L'envoi d'emails de confirmation peut être limité.
+        Si vous ne recevez rien dans les 5 minutes, vérifiez vos spams ou contactez un administrateur.
+      </div>
+
+      <div class="login-register-link" style="margin-top:16px">
+        Déjà un compte ?
+        <a onclick="showLoginScreen()">Se connecter</a>
+      </div>
+    </div>
+  </div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     ÉCRAN DE SUCCÈS APRÈS INSCRIPTION
+═══════════════════════════════════════════════════════════ -->
+  <div id="register-success-screen">
+    <div class="login-card" style="text-align:center">
+      <div class="register-success-icon">✅</div>
+      <div class="register-success-title">Compte créé !</div>
+      <div class="register-success-text">
+        Un email de confirmation a été envoyé à<br>
+        <span class="register-success-email" id="register-success-email"></span>
+      </div>
+      <div class="register-success-text">
+        Cliquez sur le lien dans l'email pour activer votre compte,
+        puis connectez-vous.
+      </div>
+      <div class="register-success-note">
+        Si vous ne recevez pas l'email dans les minutes qui suivent,
+        vérifiez votre dossier spam.
+      </div>
+
+      <!-- Feedback resend (succès ou erreur) -->
+      <div id="resend-feedback" style="display:none;margin-top:12px;padding:10px 14px;
+        border-radius:8px;font-size:13px;text-align:left;"></div>
+
+      <!-- Bouton renvoyer -->
+      <button id="resend-btn" onclick="resendConfirmationEmail()"
+        style="margin-top:14px;width:100%;padding:11px;cursor:pointer;
+               background:#f0f6ff;border:1.5px solid #004fa0;border-radius:10px;
+               color:#004fa0;font-size:13px;font-weight:600;
+               display:flex;align-items:center;justify-content:center;gap:8px;
+               transition:all .2s;">
+        📧 Renvoyer l'email de confirmation
+      </button>
+
+      <button class="login-btn" onclick="showLoginScreen()" style="margin-top:12px">
+        ← Retour à la connexion
+      </button>
+    </div>
+  </div>
 
 <!-- ═══════════════════════════════════════════════════════════
      SIDEBAR
@@ -993,7 +1154,7 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
     </div>
   </div>
 
-  <!-- Infos utilisateur Supabase -->
+  <!-- Infos utilisateur connecté (masqué hors Supabase) -->
   <div id="sidebar-user" style="display:none;padding:8px 14px 4px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:4px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
       <div style="font-size:11px;color:rgba(255,255,255,.6)">Connecté en tant que</div>
@@ -1007,127 +1168,149 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
       font-size:11px;cursor:pointer;">🚪 Déconnexion</button>
   </div>
 
+  <!-- ══ SECTION 1 : NAVIGATION (visible par tous) ══ -->
   <div class="sidebar-section-label">Navigation</div>
   <div class="nav-item active" data-page="home">
-    <span class="nav-icon">🏠</span> Accueil
+    <span class="nav-icon">🏠</span><span class="nav-label">Accueil</span>
   </div>
   <div class="nav-item" data-page="gymnastes_liste">
-    <span class="nav-icon">🤸</span> Gymnastes
+    <span class="nav-icon">🤸</span><span class="nav-label">Gymnastes</span>
     <span class="nav-badge" id="nav-gymnliste-count">0</span>
   </div>
-  <div class="nav-item" data-page="clubs_liste">
-    <span class="nav-icon">🏟</span> Clubs
-    <span class="nav-badge" id="nav-clubs-liste-count">0</span>
-  </div>
   <div class="nav-item" data-page="competitions">
-    <span class="nav-icon">🏆</span> Compétitions
+    <span class="nav-icon">🏆</span><span class="nav-label">Compétitions</span>
     <span class="nav-badge" id="nav-comp-count">0</span>
   </div>
   <div class="nav-item" data-page="equipes">
-    <span class="nav-icon">🏟</span> Classements Équipes
+    <span class="nav-icon">🏟</span><span class="nav-label">Classements par Équipes</span>
     <span class="nav-badge" id="nav-club-count">0</span>
   </div>
   <div class="nav-item" data-page="gymnastes">
-    <span class="nav-icon">🤸</span> Classements Individuels
+    <span class="nav-icon">🤸</span><span class="nav-label">Classements Individuels</span>
     <span class="nav-badge" id="nav-gymn-count">0</span>
   </div>
   <div class="nav-item" data-page="classements">
-    <span class="nav-icon">📈</span> Classements Agrès
+    <span class="nav-icon">📈</span><span class="nav-label">Classements par Agrès</span>
   </div>
-  <div class="nav-item" data-page="analyses">
-    <span class="nav-icon">📊</span> Analyses Globales
-  </div>
-  <div class="nav-item" data-page="analyses_detail">
-    <span class="nav-icon">🔬</span> Analyses Détaillées
-  </div>
-  <div class="nav-item" data-page="analyses_club">
-    <span class="nav-icon">🏠</span> Analyses Club
-  </div>
-  <div class="nav-item" id="nav-historique" data-page="historique">
-    <span class="nav-icon">🗂</span> Historique Imports
-    <span class="nav-badge" id="nav-history-count">0</span>
-  </div>
-  <div class="nav-item" id="nav-export-bdd" data-page="export_bdd">
-    <span class="nav-icon">💾</span> Export BDD
-  </div>
-  <!-- Migration SQLite → Supabase — visible uniquement Admin + mode Supabase -->
-  <div class="nav-item" id="nav-migration" data-page="migration_supabase"
-    style="display:none;border-left:3px solid #f0a500">
-    <span class="nav-icon">🔄</span> Migration → Supabase
+  <!-- Recharger les données (visible par tous en mode Supabase) -->
+  <div id="nav-reload" class="nav-item nav-item-sync" onclick="forceReloadSupabase()" style="display:none">
+    <span class="nav-icon">🔃</span>
+    <span class="nav-label">Recharger les données</span>
   </div>
 
+  <!-- ══ SECTION 2 : ANALYSES (admin + coach uniquement) ══ -->
+  <div id="section-analyses" style="display:none">
+    <div class="sidebar-section-label">Analyses</div>
+    <div class="nav-item" data-page="analyses">
+      <span class="nav-icon">📊</span><span class="nav-label">Analyses Globales</span>
+    </div>
+    <div class="nav-item" data-page="analyses_detail">
+      <span class="nav-icon">🔬</span><span class="nav-label">Analyses Détaillées</span>
+    </div>
+    <div class="nav-item" data-page="analyses_club">
+      <span class="nav-icon">🏠</span><span class="nav-label">Analyses Club</span>
+    </div>
+  </div>
+
+  <!-- ══ SECTION 3 : PAR GROUPE (visible par tous) ══ -->
   <div class="sidebar-section-label">Par Groupe</div>
   <div class="group-sub">
     <div class="nav-item" data-page="groupe" data-groupe="G1">
-      <span class="nav-icon">🔵</span> G1 — Nord / IDF
+      <span class="nav-icon">🔵</span><span class="nav-label">G1 — Nord / IDF</span>
     </div>
     <div class="nav-item" data-page="groupe" data-groupe="G2">
-      <span class="nav-icon">🔴</span> G2 — RA / PACA
+      <span class="nav-icon">🔴</span><span class="nav-label">G2 — RA / PACA</span>
     </div>
     <div class="nav-item" data-page="groupe" data-groupe="G3">
-      <span class="nav-icon">🟢</span> G3 — Aquit / LR / MP
+      <span class="nav-icon">🟢</span><span class="nav-label">G3 — Aquit / LR / MP</span>
     </div>
     <div class="nav-item" data-page="groupe" data-groupe="G4">
-      <span class="nav-icon">🟡</span> G4 — Auv / Centre / PDL
+      <span class="nav-icon">🟡</span><span class="nav-label">G4 — Auv / Centre / PDL</span>
     </div>
     <div class="nav-item" data-page="groupe" data-groupe="GN">
-      <span class="nav-icon">🟣</span> GN — Finale Nationale
+      <span class="nav-icon">🟣</span><span class="nav-label">GN — Finale Nationale</span>
     </div>
   </div>
 
-  <!-- Indicateur de stockage -->
-  <!-- SQLite status + storage indicator -->
-  <div id="storage-indicator" style="padding:10px 18px 6px;border-top:1px solid rgba(255,255,255,.08)">
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
-      <div id="db-status-dot" style="width:7px;height:7px;border-radius:50%;background:#f0a500;flex-shrink:0"></div>
-      <span id="db-status-text" style="font-size:10px;color:rgba(255,255,255,.6);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">SQLite…</span>
-      <span id="storage-pct" style="font-size:10px;font-weight:700;color:rgba(255,255,255,.7)">—</span>
+  <!-- ══ SECTION 4 : ADMINISTRATION (admin uniquement) ══ -->
+  <div id="section-admin" style="display:none">
+    <div class="sidebar-section-label">Administration</div>
+
+    <!-- Importer des données -->
+    <div class="nav-item" id="nav-import" onclick="openModal()">
+      <span class="nav-icon">📥</span><span class="nav-label">Importer des données</span>
     </div>
-    <div style="height:4px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden;margin-bottom:5px">
-      <div id="storage-bar" style="height:100%;width:0%;border-radius:2px;transition:width .4s ease,background .4s ease"></div>
+
+    <!-- Historique des imports -->
+    <div class="nav-item" id="nav-historique" data-page="historique">
+      <span class="nav-icon">🗂</span><span class="nav-label">Historique des Imports</span>
+      <span class="nav-badge" id="nav-history-count">0</span>
     </div>
-    <div style="display:flex;justify-content:space-between;margin-bottom:7px">
-      <span id="storage-used" style="font-size:10px;color:rgba(255,255,255,.45)">—</span>
-      <span id="storage-free" style="font-size:10px;color:rgba(255,255,255,.45)">—</span>
+
+    <!-- Export BDD -->
+    <div class="nav-item" id="nav-export-bdd" data-page="export_bdd">
+      <span class="nav-icon">💾</span><span class="nav-label">Export BDD</span>
     </div>
-    <div id="sqlite-storage-btns" style="display:flex;gap:4px">
-      <button onclick="openDBFile()" title="Charger ufolep_gaf.db"
-        style="flex:1;background:rgba(255,255,255,.12);border:none;border-radius:5px;color:#fff;font-size:10px;padding:5px 3px;cursor:pointer">📂 Charger</button>
-      <button onclick="saveDBNow()" title="Sauvegarder la base SQLite sur disque"
-        style="flex:1;background:rgba(255,255,255,.12);border:none;border-radius:5px;color:#fff;font-size:10px;padding:5px 3px;cursor:pointer">💾 Enreg.</button>
-      <button onclick="createDBFile()" title="Créer/exporter ufolep_gaf.db"
-        style="flex:1;background:rgba(255,255,255,.12);border:none;border-radius:5px;color:#fff;font-size:10px;padding:5px 3px;cursor:pointer">🆕 Export</button>
+
+    <!-- Sauvegarder vers Supabase (mode Supabase uniquement) -->
+    <div id="nav-supabase-save" class="nav-item" onclick="manualSaveToSupabase()" style="display:none">
+      <span class="nav-icon">📤</span>
+      <span class="nav-label">Sauvegarder vers Supabase</span>
+      <button id="btn-save-supabase" style="position:absolute;visibility:hidden;pointer-events:none"></button>
+    </div>
+
+    <!-- Migration SQLite → Supabase (mode Supabase + admin) -->
+    <div class="nav-item" id="nav-migration" data-page="migration_supabase" style="display:none">
+      <span class="nav-icon">🔄</span><span class="nav-label">Migration → Supabase</span>
+    </div>
+
+    <!-- Gestion utilisateurs (mode Supabase + admin) -->
+    <div id="nav-users" class="nav-item" data-page="gestion_users" style="display:none">
+      <span class="nav-icon">👥</span><span class="nav-label">Gestion utilisateurs</span>
+    </div>
+
+    <!-- Supprimer toutes les données (admin uniquement) -->
+    <div id="nav-clear-wrap" class="nav-item nav-item-danger" style="display:none"
+      onclick="document.getElementById('btn-clear-data').click()">
+      <span class="nav-icon">🗑</span>
+      <span class="nav-label">Supprimer toutes les données</span>
+      <button id="btn-clear-data" style="position:absolute;visibility:hidden;pointer-events:none"></button>
+    </div>
+
+    <!-- Base de données locale (SQLite — visible uniquement hors Supabase + admin) -->
+    <div id="section-sqlite" style="display:none">
+      <div class="sidebar-section-label" style="font-size:9px;opacity:.7">Base de données locale (SQLite)</div>
+      <!-- Indicateur de stockage -->
+      <div id="storage-indicator" style="padding:4px 18px 6px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+          <div id="db-status-dot" style="width:7px;height:7px;border-radius:50%;background:#f0a500;flex-shrink:0"></div>
+          <span id="db-status-text" style="font-size:10px;color:rgba(255,255,255,.6);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">SQLite…</span>
+          <span id="storage-pct" style="font-size:10px;font-weight:700;color:rgba(255,255,255,.7)">—</span>
+        </div>
+        <div style="height:4px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden;margin-bottom:5px">
+          <div id="storage-bar" style="height:100%;width:0%;border-radius:2px;transition:width .4s ease,background .4s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:7px">
+          <span id="storage-used" style="font-size:10px;color:rgba(255,255,255,.45)">—</span>
+          <span id="storage-free" style="font-size:10px;color:rgba(255,255,255,.45)">—</span>
+        </div>
+        <div id="sqlite-storage-btns" style="display:flex;gap:4px">
+          <button onclick="openDBFile()" title="Charger ufolep_gaf.db"
+            style="flex:1;background:rgba(255,255,255,.12);border:none;border-radius:5px;color:#fff;font-size:10px;padding:5px 3px;cursor:pointer">📂 Charger</button>
+          <button onclick="saveDBNow()" title="Sauvegarder la base SQLite sur disque"
+            style="flex:1;background:rgba(255,255,255,.12);border:none;border-radius:5px;color:#fff;font-size:10px;padding:5px 3px;cursor:pointer">💾 Enreg.</button>
+          <button onclick="createDBFile()" title="Créer/exporter ufolep_gaf.db"
+            style="flex:1;background:rgba(255,255,255,.12);border:none;border-radius:5px;color:#fff;font-size:10px;padding:5px 3px;cursor:pointer">🆕 Export</button>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Indicateur mode SQLite local (visible hors Supabase) -->
+  <!-- Indicateur mode SQLite local (visible hors Supabase, tous rôles) -->
   <div id="sqlite-mode-indicator" style="display:none;margin:0 10px 4px;
     background:rgba(240,165,0,.15);border:1px solid rgba(240,165,0,.4);border-radius:6px;
     padding:6px 10px;font-size:10px;color:#f0a500;text-align:center">
     💾 Mode SQLite local (hors-ligne)
-  </div>
-
-  <!-- Bouton sauvegarde manuelle Supabase (Admin seulement) -->
-    <div id="btn-supabase-save-wrap" style="display:none;margin:0 10px 6px">
-    <!-- Sauvegarder : admin + coach uniquement -->
-    <button onclick="manualSaveToSupabase()" id="btn-save-supabase"
-      title="Sauvegarder les données vers Supabase"
-      style="width:100%;background:rgba(0,79,160,.4);border:1px solid rgba(0,79,160,.6);
-             border-radius:6px;color:#7bb8ff;font-size:10px;padding:5px 8px;cursor:pointer;margin-bottom:3px">
-      ☁️ Sauvegarder vers Supabase
-    </button>
-    <!-- Synchroniser : tous les rôles -->
-    <button onclick="forceReloadSupabase()"
-      title="Recharger toutes les données depuis Supabase"
-      style="width:100%;background:rgba(24,160,88,.2);border:1px solid rgba(24,160,88,.4);
-             border-radius:6px;color:#4dcc88;font-size:10px;padding:5px 8px;cursor:pointer">
-      🔄 Synchroniser (Charger)
-    </button>
-  </div>
-
-  <!-- Nav gestion utilisateurs (Admin seulement) -->
-  <div id="nav-users" class="nav-item" data-page="gestion_users" style="display:none">
-    <span class="nav-icon">👥</span> Gestion utilisateurs
   </div>
 
   <!-- Version + À propos -->
@@ -1142,10 +1325,6 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
   </div>
   <div class="sidebar-footer">
     <button class="theme-toggle" id="theme-toggle">🌙 Mode sombre</button>
-    <!-- Bouton suppression (admin uniquement) -->
-    <button class="theme-toggle" id="btn-clear-data"
-      style="background:rgba(212,32,32,.25);flex:unset;padding:5px 8px;display:none"
-      title="Supprimer toutes les données">🗑</button>
   </div>
 </nav>
 
@@ -1160,9 +1339,10 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
   <header id="topbar">
     <button id="menu-toggle">☰</button>
     <div class="topbar-title" id="topbar-title"><span>UFOLEP GAF</span> — Analyse</div>
-    <button class="btn btn-outline btn-sm" id="btn-export-csv">⬇ CSV</button>
-    <button class="btn btn-outline btn-sm" id="btn-export-json">⬇ JSON</button>
-    <button class="btn btn-primary btn-sm" id="btn-import">＋ Importer</button>
+    <!-- Boutons CSV/JSON conservés dans le DOM (cachés) pour les listeners JS -->
+    <button class="btn btn-outline btn-sm" id="btn-export-csv" style="display:none">⬇ CSV</button>
+    <button class="btn btn-outline btn-sm" id="btn-export-json" style="display:none">⬇ JSON</button>
+    <button id="btn-import" style="display:none">＋ Importer</button>
   </header>
 
   <!-- PAGE CONTENT -->
@@ -1563,6 +1743,36 @@ else if (typeof exports === 'object'){
 
 </script>
 <script>
+/* ═══════════════════════════════════════════════════════════
+   TABLE DES MATIÈRES — UFOLEP GAF v1.1.0
+   ───────────────────────────────────────────────────────────
+   1. CONSTANTES & CONFIGURATION    (AGRES, GROUPES, CHART_PALETTE…)
+   2. UTILITAIRES — TRI/PAGINATION  (makeSortHeader, sortData, paginateData…)
+   3. CACHE DE PERFORMANCE          (_cache)
+   4. DEBOUNCE                      (debounce, debouncedRenderPage)
+   5. INDICATEUR DE CHARGEMENT      (showLoading, withLoading)
+   6. STATE                         (état global de l'application)
+   7. NORMALISATION                 (normalizeName, gymKey, normalizeClub, clubKey)
+   8. STORAGE — SQLite/SQL.js       (_initSqlJs, _newDB, saveData, loadData…)
+   9. DÉRIVATION & NAVIGATION       (deriveCompetitions, updateNavBadges, navigate…)
+  10. RENDU DE PAGES                (renderPage, PAGE_TITLES, PAGE_RENDERERS…)
+  11. PAGES — HOME / COMPETITIONS   (renderHome, renderCompetitions, renderCompFiche…)
+  12. PAGES — GYMNASTES             (renderGymnastes, renderGymnastesListe, renderGymnastesFiche…)
+  13. PAGES — CLUBS                 (renderClubsListe, renderClubFiche…)
+  14. PAGES — ANALYSES              (renderAnalyses, renderAnalysesClub, renderAnalysesDetail…)
+  15. PAGES — CLASSEMENTS / GROUPE  (renderClassements, renderGroupe…)
+  16. PAGES — HISTORIQUE / EXPORT   (renderHistorique, renderExportBDD…)
+  17. PAGES — MIGRATION / ADMIN     (renderMigrationSupabase, renderGestionUsers…)
+  18. GRAPHIQUES                    (_chartsHome, _chartsGroupe, initCharts, initClubCharts…)
+  19. IMPORT                        (parseFlipsaltoAPI, fetchAndLoadFlipsalto, doImport…)
+  20. EXPORT                        (exportCSV, exportJSON, exportTeamsCSV…)
+  21. UTILITAIRES UI                (toast, openModal, buildPagination, bindPageEvents…)
+  22. TRI & PAGINATION              (setSortAndRender, setCompSort, goPage…)
+  23. INITIALISATION                (_initNavEvents, _initModalEvents, init…)
+  24. MENU MOBILE                   (initMobileMenu)
+  25. SUPABASE                      (initSupabase, doLogin, loadDataFromSupabase…)
+═══════════════════════════════════════════════════════════ */
+
 /* =========================================================
    CONSTANTES & CONFIGURATION
 ========================================================= */
@@ -1589,19 +1799,46 @@ const PAGE_SIZE = 20;
    Évite de recalculer les mêmes données à chaque renderPage().
    Invalidé dès que state.results ou state.teamResults changent.
 ========================================================= */
+/* =========================================================
+   CACHE DE PERFORMANCE
+   Stratégie : versionnage global (_v) — toute invalidation
+   incrémente _v, rendant toutes les clés précédentes obsolètes.
+   Les clés de filtre/tri sont encodées dans la clé de cache,
+   donc un changement de filtre produit automatiquement un cache miss.
+   Invalidation :
+     - _cache.invalidate()  → après tout import, suppression, ou mutation de données
+     - _cache.del(key)      → invalidation ciblée d'une seule entrée
+========================================================= */
 const _cache = {
-  _v: 0,                // version de cache — incrémentée à chaque mutation des données
+  _v: 0,          // version incrémentée à chaque mutation de state.results
   _store: new Map(),
 
-  // Invalider tout le cache (appelé après chaque saveData / mutation)
-  invalidate() { this._v++; this._store.clear(); },
+  /** Invalide tout le cache (à appeler après toute mutation de state.results).
+   *  Réinitialise aussi _lastRenderKey pour forcer un render complet au prochain appel. */
+  invalidate() {
+    this._v++;
+    this._store.clear();
+    // eslint-disable-next-line no-use-before-define
+    if (typeof _lastRenderKey    !== 'undefined') _lastRenderKey    = '';
+    if (typeof _lastChartsDataSig !== 'undefined') _lastChartsDataSig = '';
+  },
 
-  // Lire ou calculer + mettre en cache
+  /**
+   * Lit une valeur du cache, ou la calcule et la stocke.
+   * La clé est versionnée : toute invalidation rend les entrées précédentes inaccessibles.
+   * @param {string}   key - Identifiant de la valeur (les filtres/tri doivent être dans la clé)
+   * @param {Function} fn  - Fonction de calcul (appelée seulement si absente du cache)
+   */
   get(key, fn) {
-    const k = key + '_v' + this._v;
+    const k = `${key}@${this._v}`;
     if (!this._store.has(k)) this._store.set(k, fn());
     return this._store.get(k);
-  }
+  },
+
+  /** Invalide une seule clé (sans incrémenter la version globale) */
+  del(key) {
+    this._store.delete(`${key}@${this._v}`);
+  },
 };
 
 /* =========================================================
@@ -1609,9 +1846,14 @@ const _cache = {
 ========================================================= */
 function debounce(fn, delay) {
   let t;
-  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), delay); };
+  const debounced = (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), delay);
+  };
+  debounced.cancel = () => clearTimeout(t);
+  return debounced;
 }
-const debouncedRenderPage = debounce(() => renderPage(), 500);
+const debouncedRenderPage = debounce(() => renderPage(), 300);
 
 /* =========================================================
    INDICATEUR DE CHARGEMENT
@@ -1642,6 +1884,83 @@ function withLoading(msg, fn) {
   });
 }
 
+
+/* =========================================================
+   UTILITAIRES — TRI, PAGINATION, FILTRAGE
+   Fonctions génériques réutilisées par toutes les pages.
+========================================================= */
+
+/**
+ * Génère un <th> cliquable pour le tri.
+ * @param {string} col        - Nom de la colonne
+ * @param {string} label      - Texte affiché
+ * @param {string} activCol   - Colonne actuellement triée (state.xxxSortCol)
+ * @param {string} activeDir  - Direction actuelle (state.xxxSortDir)
+ * @param {string} sortFn     - Nom de la fonction JS à appeler (ex: 'setCompSort')
+ * @param {string} [align=''] - Alignement CSS optionnel
+ */
+function makeSortHeader(col, label, activeCol, activeDir, sortFn, align = '') {
+  const active = activeCol === col;
+  const arrow  = active ? (activeDir === 'asc' ? '▲' : '▼') : '⇅';
+  const style  = `cursor:pointer;white-space:nowrap${align ? ';text-align:' + align : ''}`;
+  return `<th class="${active ? 'sorted' : ''}" onclick="${sortFn}('${col}')" style="${style}">
+    ${label} <span class="sort-arrow" style="opacity:${active ? 1 : .4}">${arrow}</span></th>`;
+}
+
+/**
+ * Trie un tableau selon une colonne et une direction.
+ * @param {Array}  arr    - Tableau à trier (cloné)
+ * @param {string} col    - Clé de tri
+ * @param {string} dir    - 'asc' | 'desc'
+ * @returns {Array} Tableau trié (nouvelle référence)
+ */
+function sortData(arr, col, dir) {
+  return [...arr].sort((a, b) => {
+    const va = a[col], vb = b[col];
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    const cmp = (typeof va === 'string')
+      ? va.localeCompare(vb, 'fr', { sensitivity: 'base' })
+      : va - vb;
+    return dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+/**
+ * Extrait une page d'un tableau.
+ * @param {Array}  arr      - Tableau source
+ * @param {number} page     - Page courante (1-indexed)
+ * @param {number} pageSize - Taille de page
+ * @returns {{ items: Array, total: number, totalPages: number }}
+ */
+function paginateData(arr, page, pageSize) {
+  const total      = arr.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage   = Math.min(Math.max(1, page), totalPages);
+  const items      = arr.slice((safePage - 1) * pageSize, safePage * pageSize);
+  return { items, total, totalPages, page: safePage };
+}
+
+/**
+ * Factory : crée une fonction de tri qui met à jour deux clés de state et rerend.
+ * @param {string} colKey   - ex: 'compSortCol'
+ * @param {string} dirKey   - ex: 'compSortDir'
+ * @param {string} [pageKey]- ex: 'compPage' (optionnel, reset à 1 sur changement de col)
+ * @param {string} [defaultDir] - Direction par défaut sur nouvelle colonne
+ */
+function _makeSortFn(colKey, dirKey, pageKey, defaultDir = 'desc') {
+  return function(col) {
+    if (state[colKey] === col) {
+      state[dirKey] = state[dirKey] === 'asc' ? 'desc' : 'asc';
+    } else {
+      state[colKey] = col;
+      state[dirKey] = defaultDir;
+      if (pageKey) state[pageKey] = 1;
+    }
+    renderPage();
+  };
+}
 
 let state = {
   results: [],
@@ -1941,7 +2260,6 @@ function saveData() {
     try {
       const count = _db.exec('SELECT COUNT(*) FROM resultats')[0]?.values[0][0] || 0;
       if (count === 0 && state.results.length > 0) {
-        console.log('[SQLite] Tables vides mais RAM non vide → saveAll()');
         saveAll();
         return;
       }
@@ -2023,7 +2341,6 @@ function _startAutoSave() {
     if (!_db || !_dbReady) return;
     if (_fileHandle) {
       const ok = await _writeFSAPI();
-      if (ok) console.log('[SQLite] Auto-save', new Date().toLocaleTimeString('fr-FR'));
     }
   }, 30000);
 }
@@ -2218,7 +2535,10 @@ function _updateDBStatus(st, msg) {
   const t = document.getElementById('db-status-text');
   const d = document.getElementById('db-status-dot');
   if (t) t.textContent = msg;
-  if (d) d.style.background = st==='ok'?'#18a058':st==='loading'?'#f0a500':'#d42020';
+  if (d) {
+    const colors = { ok: '#18a058', loading: '#f0a500', error: '#d42020' };
+    d.style.background = colors[st] || colors.error;
+  }
 }
 
 /* ─── Boutons sidebar ───────────────────────────────────────*/
@@ -2300,7 +2620,6 @@ function recoverAllPartitions() {
 }
 
 
-
 /* ─── Dériver les compétitions depuis state.results ─────── */
 function deriveCompetitions() {
   const map = {};
@@ -2319,130 +2638,23 @@ function deriveCompetitions() {
 }
 
 function updateNavBadges() {
-  const gc  = document.getElementById('nav-comp-count');
-  const gg  = document.getElementById('nav-gymn-count');
-  const gcl = document.getElementById('nav-club-count');
-  const gh  = document.getElementById('nav-history-count');
-  if (gc)  gc.textContent  = state.competitions.length;
-  const ncl = document.getElementById('nav-clubs-liste-count');
-  if (ncl) ncl.textContent = _cache.get('uniqueClubCount', () =>
-    new Set(state.results.map(r => normalizeClub(r.club)).filter(Boolean)).size
-  );
-  const gnl = document.getElementById('nav-gymnliste-count');
-  if (gnl) gnl.textContent = _cache.get('uniqueGymnCount', () => {
+  // Calculs mis en cache — appelés une seule fois même si plusieurs badges existent
+  const gymnCount = _cache.get('uniqueGymnCount', () => {
     const seen = new Set();
     state.results.forEach(r => seen.add(gymKey(r.nom, r.prenom)));
     return seen.size;
   });
-  if (gg)  gg.textContent  = _cache.get('uniqueGymnCount', () => {
-    const seen = new Set();
-    state.results.forEach(r => seen.add(gymKey(r.nom, r.prenom)));
-    return seen.size;
-  });
-  if (gcl) gcl.textContent = _cache.get('uniqueClubCount', () =>
+  const clubCount = _cache.get('uniqueClubCount', () =>
     new Set(state.results.map(r => normalizeClub(r.club)).filter(Boolean)).size
   );
-  if (gh)  gh.textContent  = state.importHistory.length;
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setEl('nav-comp-count',        state.competitions.length);
+  setEl('nav-gymn-count',        gymnCount);
+  setEl('nav-clubs-liste-count', clubCount);
+  setEl('nav-gymnliste-count',   gymnCount);
+  setEl('nav-club-count',        clubCount);
+  setEl('nav-history-count',     state.importHistory.length);
 }
-
-/* ─── Enregistre un import ───────────────────────────────── */
-function recordImport(label, compIds, teamCompIds, nbInd, nbTeams) {
-  state.importHistory.unshift({
-    id:          Date.now() + '_' + Math.random().toString(36).slice(2,7),
-    importedAt:  new Date().toISOString(),
-    label,
-    compIds:     [...new Set(compIds)],
-    teamCompIds: [...new Set(teamCompIds)],
-    nbInd,
-    nbTeams,
-  });
-  if (state.importHistory.length > 200) state.importHistory.length = 200;
-  const touchedSaisons = new Set([
-    ...state.results.filter(r=>compIds.includes(r.compId)).map(r=>r.saison),
-    ...state.teamResults.filter(t=>teamCompIds.includes(t.compId)).map(t=>t.saison),
-  ]);
-  touchedSaisons.forEach(s => markDirty(s));
-}
-
-/* ─── Indicateur de stockage ─────────────────────────────── */
-async function _updateStorageIndicatorAsync() {
-  try {
-    const el = {
-      bar:  document.getElementById('storage-bar'),
-      pct:  document.getElementById('storage-pct'),
-      used: document.getElementById('storage-used'),
-      free: document.getElementById('storage-free'),
-    };
-    if (!el.bar) return;
-
-    // Estimer la taille via navigator.storage si disponible
-    let usedBytes = 0, quota = 0;
-    if (navigator.storage?.estimate) {
-      const est = await navigator.storage.estimate();
-      usedBytes = est.usage   || 0;
-      quota     = est.quota   || (2 * 1024 * 1024 * 1024); // défaut 2 Go
-    } else {
-      // Fallback : estimer depuis les données en RAM
-      usedBytes = JSON.stringify(state.results).length * 2 +
-                  JSON.stringify(state.teamResults).length * 2;
-      quota = 500 * 1024 * 1024; // 500 Mo par défaut
-    }
-
-    const freeBytes = Math.max(0, quota - usedBytes);
-    const pct       = quota > 0 ? Math.min(100, Math.round(usedBytes / quota * 100)) : 0;
-
-    const fmt = b => {
-      if (b < 1024)            return b + ' o';
-      if (b < 1024*1024)       return Math.round(b/1024) + ' Ko';
-      if (b < 1024*1024*1024)  return (b/1024/1024).toFixed(1) + ' Mo';
-      return (b/1024/1024/1024).toFixed(2) + ' Go';
-    };
-
-    const color = pct < 50 ? '#18a058' : pct < 75 ? '#f0a500' : pct < 90 ? '#e87c20' : '#d42020';
-    el.bar.style.width      = pct + '%';
-    el.bar.style.background = color;
-    el.pct.style.color      = pct >= 75 ? color : 'rgba(255,255,255,.7)';
-    el.pct.textContent      = pct + '%';
-    el.used.textContent     = fmt(usedBytes) + ' utilisés';
-    el.free.textContent     = fmt(freeBytes) + ' libres';
-    el.free.style.color     = pct >= 75 ? color : 'rgba(255,255,255,.45)';
-  } catch(e) {}
-}
-
-function updateStorageIndicator() {
-  _updateStorageIndicatorAsync(); // fire and forget
-}
-
-/* ─── Récupération d'urgence ─────────────────────────────── */
-function recoverAllPartitions() {
-  showLoading('Récupération des données en cours…');
-  setTimeout(async () => {
-    try {
-      await _openDB();
-      const [allInd, allTeams] = await Promise.all([
-        _getAll(_ST_RES), _getAll(_ST_EQ)
-      ]);
-      const existingRes  = new Set(state.results.map(r=>r.compId+'|'+r.gymnaste_id));
-      const existingTeam = new Set(state.teamResults.map(t=>t.compId+'|'+t.equipeNom));
-      let recInd = 0, recTeam = 0;
-      allInd.forEach(r => {
-        if (!existingRes.has(r.compId+'|'+r.gymnaste_id)) { state.results.push(r); recInd++; }
-      });
-      allTeams.forEach(t => {
-        if (!existingTeam.has(t.compId+'|'+t.equipeNom)) { state.teamResults.push(t); recTeam++; }
-      });
-      if (recInd > 0 || recTeam > 0) {
-        _fixSaisons(); deriveCompetitions(); saveData();
-        toast(`✅ Récupération : ${recInd} résultats · ${recTeam} équipes`, 'success');
-      } else {
-        toast('Aucune donnée supplémentaire trouvée.', 'error');
-      }
-      _cache.invalidate(); updateNavBadges(); renderPage();
-    } catch(e) { toast('Erreur de récupération : ' + e.message, 'error'); }
-  }, 50);
-}
-
-
 function uniqueGymnastes(results) {
   if (results === state.results) {
     return _cache.get('uniqueGymnastes', () => {
@@ -2462,6 +2674,9 @@ function uniqueGymnastes(results) {
   });
 }
 
+// ── Clés de cache ────────────────────────────────────────
+
+/** Clé pour les filtres principaux (pages Gymnastes, Classements, Exports) */
 function _filterCacheKey() {
   return [
     state.filterSaison, state.filterComp, state.filterGroupe,
@@ -2469,9 +2684,36 @@ function _filterCacheKey() {
   ].join('|');
 }
 
+/** Clé pour les filtres de la liste des gymnastes agrégés */
+function _gymnListeCacheKey() {
+  return [
+    state.gymnListeGroupe, state.gymnListeCat,
+    state.gymnListeClub,   state.gymnListeSearch
+  ].join('|');
+}
+
+/** Clé pour les filtres de la liste des clubs */
+function _clubListeCacheKey() {
+  return [state.clubListeGroupe, state.clubListeSearch].join('|');
+}
+
+/** Clé pour les filtres + tri de la page Compétitions */
+function _compFilterSortKey() {
+  return [
+    state.filterSaison, state.filterGroupe, state.filterCat,
+    state.compSearch, state.compSortCol, state.compSortDir
+  ].join('|');
+}
+
+// ── Fonctions de filtrage avec mémoïsation ───────────────
+
+/**
+ * Retourne les résultats filtrés selon les filtres principaux actifs.
+ * Résultat mis en cache : invalide automatiquement quand les données
+ * ou les filtres changent (clé = version@filtres).
+ */
 function getFilteredResults() {
-  // Note : le chargement des partitions est géré en amont dans renderPage()
-  // et navigate(). On ne fait ici que filtrer ce qui est déjà en RAM.
+  // Note : le chargement des partitions est géré en amont dans renderPage().
   return _cache.get('filtered_' + _filterCacheKey(), () => {
     const searchQ = state.filterSearch ? normalizeName(state.filterSearch) : null;
     return state.results.filter(r => {
@@ -2489,6 +2731,166 @@ function getFilteredResults() {
   });
 }
 
+/**
+ * Retourne les résultats filtrés + triés pour la page Gymnastes/Classements.
+ * Le tri est inclus dans la clé → cache miss uniquement si filtre OU tri change.
+ * Évite de recalculer le tri à chaque changement de page de pagination.
+ */
+function getFilteredAndSorted() {
+  const key = 'filteredSorted_' + _filterCacheKey() + '|' + state.sortCol + '|' + state.sortDir;
+  return _cache.get(key, () => {
+    const data = getFilteredResults(); // réutilise le cache filtre seul
+    // Tri spécial quand recherche active : date décroissante + rang
+    if (state.filterSearch) {
+      return [...data].sort((a, b) => {
+        const dateCmp = (b.date||'').localeCompare(a.date||'');
+        return dateCmp !== 0 ? dateCmp : a.rang - b.rang;
+      });
+    }
+    return [...data].sort((a, b) => {
+      let va = a[state.sortCol] ?? (a.agres?.[state.sortCol]?.final ?? 0);
+      let vb = b[state.sortCol] ?? (b.agres?.[state.sortCol]?.final ?? 0);
+      if (typeof va === 'string') return state.sortDir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+      return state.sortDir==='asc' ? va-vb : vb-va;
+    });
+  });
+}
+
+/**
+ * Construit et retourne la liste des gymnastes uniques avec stats agrégées,
+ * filtrée selon les filtres de la page "Liste des Gymnastes".
+ * Mémoïsé : le calcul O(n) n'est refait que si les données ou les filtres changent.
+ * Résultat NON trié (le tri change souvent, les données agrégées rarement).
+ */
+function getGymnastesListe() {
+  return _cache.get('gymnListe_' + _gymnListeCacheKey(), () => {
+    const searchQ = state.gymnListeSearch ? normalizeName(state.gymnListeSearch) : null;
+    const gymnMap = {};
+    state.results.forEach(r => {
+      if (state.gymnListeGroupe && r.groupe    !== state.gymnListeGroupe) return;
+      if (state.gymnListeCat    && r.categorie !== state.gymnListeCat)    return;
+      if (state.gymnListeClub   && normalizeClub(r.club) !== state.gymnListeClub) return;
+      if (searchQ && !normalizeName(`${r.nom} ${r.prenom} ${r.club}`).includes(searchQ)) return;
+
+      const key = gymKey(r.nom, r.prenom);
+      if (!gymnMap[key]) {
+        gymnMap[key] = {
+          key, nom: r.nom, prenom: r.prenom,
+          club: normalizeClub(r.club) || r.club,
+          categorie: r.categorie, groupe: r.groupe,
+          annee: r.annee || '', totals: [], comps: new Set()
+        };
+      }
+      const g = gymnMap[key];
+      if (r.total > 0) g.totals.push(r.total);
+      g.comps.add(r.compId);
+      if (!g._lastDate || r.date > g._lastDate) {
+        g._lastDate = r.date;
+        g.categorie = r.categorie;
+        g.groupe    = r.groupe;
+        g.club      = normalizeClub(r.club) || r.club;
+        if (r.annee) g.annee = r.annee;
+      }
+    });
+    return Object.values(gymnMap).map(g => ({
+      ...g,
+      nbComps:   g.comps.size,
+      avgTotal:  g.totals.length ? g.totals.reduce((a,b)=>a+b,0)/g.totals.length : 0,
+      bestTotal: g.totals.length ? max(g.totals) : 0,
+    }));
+  });
+}
+
+/**
+ * Construit et retourne la liste des clubs avec stats agrégées.
+ * Mémoïsé : le calcul O(n) n'est refait que si les données ou les filtres changent.
+ * Résultat NON trié (le tri varie souvent).
+ */
+function getClubsListe() {
+  return _cache.get('clubListe_' + _clubListeCacheKey(), () => {
+    const searchQ = state.clubListeSearch ? normalizeName(state.clubListeSearch) : null;
+    const clubMap = {};
+    state.results.forEach(r => {
+      const c = normalizeClub(r.club); if (!c) return;
+      if (!clubMap[c]) clubMap[c] = { nom:c, gymns:new Set(), cats:new Set(), comps:new Set(), groupes:{}, totals:[] };
+      clubMap[c].gymns.add(gymKey(r.nom, r.prenom));
+      clubMap[c].cats.add(r.categorie);
+      clubMap[c].comps.add(r.compId);
+      clubMap[c].groupes[r.groupe] = (clubMap[c].groupes[r.groupe]||0)+1;
+      if (r.total>0) clubMap[c].totals.push(r.total);
+    });
+    const allClubs = Object.values(clubMap).map(c => ({
+      nom:   c.nom,
+      groupe: Object.entries(c.groupes).sort((a,b)=>b[1]-a[1])[0]?.[0]||'',
+      gymn:  c.gymns.size,
+      cats:  c.cats.size,
+      comps: c.comps.size,
+      avg:   c.totals.length ? avg(c.totals) : 0,
+      best:  c.totals.length ? max(c.totals) : 0,
+    }));
+    // Appliquer filtres textuels
+    return allClubs.filter(c => {
+      if (state.clubListeGroupe && c.groupe !== state.clubListeGroupe) return false;
+      if (searchQ && !normalizeName(c.nom).includes(searchQ)) return false;
+      return true;
+    });
+  });
+}
+
+/**
+ * Retourne les compétitions filtrées + triées pour la page Compétitions.
+ * Mémoïsé : invalide si filtre OU tri change.
+ */
+function getFilteredAndSortedComps() {
+  return _cache.get('compFilteredSorted_' + _compFilterSortKey(), () => {
+    const searchQ = state.compSearch ? normalizeName(state.compSearch) : null;
+    const filtered = state.competitions.filter(c => {
+      if (state.filterSaison && c.saison !== state.filterSaison) return false;
+      if (state.filterGroupe && c.groupe !== state.filterGroupe) return false;
+      if (state.filterCat    && !c.categories.includes(state.filterCat)) return false;
+      if (searchQ && !normalizeName(c.nom).includes(searchQ)) return false;
+      return true;
+    });
+    const dir = state.compSortDir==='asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      switch(state.compSortCol) {
+        case 'nom':    return dir * a.nom.localeCompare(b.nom);
+        case 'groupe': return dir * a.groupe.localeCompare(b.groupe);
+        case 'saison': return dir * a.saison.localeCompare(b.saison);
+        case 'nb':     return dir * (
+          state.results.filter(r=>r.compId===a.id).length -
+          state.results.filter(r=>r.compId===b.id).length
+        );
+        case 'date':
+        default: return dir * a.date.localeCompare(b.date);
+      }
+    });
+  });
+}
+
+/**
+ * Filtre state.results avec un ensemble de critères optionnels (pages Analyses).
+ * Mémoïsé : la clé encode tous les paramètres passés.
+ * @param {{ saison?, cat?, groupe?, club?, search? }} filters
+ */
+function filterResultsBy({ saison = '', cat = '', groupe = '', club = '', search = '' } = {}) {
+  const key = 'frb_' + [saison, cat, groupe, club, search].join('|');
+  return _cache.get(key, () => {
+    const searchQ = search ? normalizeName(search) : null;
+    return state.results.filter(r => {
+      if (saison  && r.saison    !== saison)  return false;
+      if (cat     && r.categorie !== cat)     return false;
+      if (groupe  && r.groupe    !== groupe)  return false;
+      if (club    && clubKey(r.club) !== clubKey(club)) return false;
+      if (searchQ) {
+        const n = normalizeName(r.nom + ' ' + r.prenom);
+        if (!n.includes(searchQ)) return false;
+      }
+      return true;
+    });
+  });
+}
+
 function noteColor(n, max=20) {
   const p = n / max;
   if (p >= .8) return 'note-high';
@@ -2497,7 +2899,13 @@ function noteColor(n, max=20) {
 }
 
 function avg(arr) { return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
-function max(arr) { return arr.length ? Math.max(...arr) : 0; }
+/** max() robuste — evite stack overflow sur grands tableaux avec spread */
+function max(arr) {
+  if (!arr.length) return 0;
+  let m = arr[0];
+  for (let i = 1; i < arr.length; i++) if (arr[i] > m) m = arr[i];
+  return m;
+}
 function fmt(n)   { return typeof n==='number' ? n.toFixed(3) : '—'; }
 function fmtDate(d) {
   if (!d) return '—';
@@ -2892,6 +3300,9 @@ async function previewFlipsaltoUrl() {
    FETCH + LOAD FLIPSALTO (utilisé au démarrage et à l'import URL)
    Charge les deux endpoints (individuel + équipes) simultanément.
 ========================================================= */
+/* =========================================================
+   IMPORT — FETCH & PARSE FLIPSALTO
+========================================================= */
 async function fetchAndLoadFlipsalto(indUrl, groupe, saison) {
   const eqUrl = getSisterUrl(indUrl);
   try {
@@ -2924,7 +3335,6 @@ async function fetchAndLoadFlipsalto(indUrl, groupe, saison) {
     console.warn('Flipsalto auto-load failed:', e.message);
   }
 }
-
 
 
 function parsePastedTable(text, meta) {
@@ -2972,7 +3382,13 @@ function parsePastedTable(text, meta) {
 /* =========================================================
    ROUTER / NAVIGATION
 ========================================================= */
+/* =========================================================
+   NAVIGATION — navigate() + helpers de routing
+========================================================= */
 function navigate(page, extra={}) {
+  // Forcer un render complet lors de la navigation vers une nouvelle page
+  // (même si la clé calculée serait identique, la page DOM est différente)
+  _lastRenderKey = '';
   state.currentPage = page;
   state.tablePage = 1;
   if (extra.groupe) state.currentGroupe = extra.groupe;
@@ -3000,79 +3416,310 @@ function navigate(page, extra={}) {
   }
 }
 
+// Table de correspondance page → titre topbar
+const PAGE_TITLES = {
+  home:'Accueil', gymnastes_liste:'Gymnastes', competitions:'Compétitions', gymnastes:'Gymnastes',
+  equipes:'Équipes / Clubs', club_fiche:'Fiche Club',
+  classements:'Classements par Agrès', analyses:'Analyses Globales',
+  analyses_detail:'Analyses Détaillées', analyses_club:'Analyses Club', gymnaste_fiche:'Fiche Gymnaste',
+  groupe:'Groupe Géographique', historique:'Historique des imports',
+  export_bdd:'Export de la base de données',
+  migration_supabase:'Migration SQLite → Supabase',
+  gestion_users:'Gestion des Utilisateurs',
+};
+
+// Pages nécessitant le chargement de TOUTES les saisons
+const GLOBAL_PAGES = new Set([
+  'gymnastes','gymnastes_liste','clubs_liste','analyses','analyses_detail',
+  'analyses_club','classements','competitions','equipes','export_bdd','historique'
+]);
+
+// Table de routage page → fonction de rendu
+const PAGE_RENDERERS = {
+  home:               renderHome,
+  gymnastes_liste:    renderGymnastesListe,
+  clubs_liste:        renderClubsListe,
+  comp_fiche:         renderCompFiche,
+  competitions:       renderCompetitions,
+  gymnastes:          renderGymnastes,
+  equipes:            renderEquipes,
+  club_fiche:         renderClubFiche,
+  classements:        renderClassements,
+  analyses:           renderAnalyses,
+  analyses_detail:    renderAnalysesDetail,
+  analyses_club:      renderAnalysesClub,
+  historique:         renderHistorique,
+  export_bdd:         renderExportBDD,
+  migration_supabase: renderMigrationSupabase,
+  gestion_users:      renderGestionUsers,
+  gymnaste_fiche:     renderGymnastesFiche,
+  groupe:             renderGroupe,
+};
+
+// Clé de render précédente — skip si identique
+let _lastRenderKey = '';
+// ID du rAF en cours pour éviter les doubles init de graphiques
+let _pendingRafId  = 0;
+// Signature des données au dernier initCharts() — skip si inchangées
+let _lastChartsDataSig = '';
+/* =========================================================
+   SYSTÈME DE RENDU
+   ─────────────────────────────────────────────────────────
+   Trois mécanismes de performance :
+   1. Mémoïsation des données  → _cache (getFilteredResults…)
+   2. Skip de render par clé   → _buildRenderKey() / _lastRenderKey
+   3. Skip des graphiques      → _chartDataSig() / _lastChartsDataSig
+
+   Invalidation :
+   • _cache.invalidate() après import/suppression (reset les clés)
+   • navigate() remet _lastRenderKey='' (force un render complet)
+
+   ⚠ Nouveau filtre ou nouvelle page ? Mettre à jour :
+     _buildRenderKey() ET, si graphique concerné, _chartDataSig().
+========================================================= */
+
+// ── Helpers de clé de render ─────────────────────────────
+// Chaque helper encode un sous-ensemble cohérent de l'état.
+// _buildRenderKey() les assemble en une seule chaîne.
+
+/** Contexte de page : quelle page, quel objet courant. */
+function _keyPage() {
+  const s = state;
+  return [
+    s.currentPage,
+    s.currentGroupe   || '',
+    s.currentClub     || '',
+    s.currentGymnaste ? (s.currentGymnaste.nom + '|' + s.currentGymnaste.prenom) : '',
+  ].join('|');
+}
+
+/** Filtres et tri des pages Gymnastes / Classements / Exports. */
+function _keyMainFilters() {
+  const s = state;
+  return [
+    s.filterSaison || '', s.filterComp   || '',
+    s.filterGroupe || '', s.filterCat    || '',
+    s.filterClub   || '', s.filterSearch || '',
+    s.sortCol      || '', s.sortDir      || '',
+    s.activeAgres  || '',
+  ].join('|');
+}
+
+/** Filtres et tri propres à chaque page de liste. */
+function _keyListFilters() {
+  const s = state;
+  return [
+    // Compétitions
+    s.compSearch || '', s.compSortDir || '',
+    // Liste Gymnastes
+    s.gymnListeGroupe || '', s.gymnListeCat    || '',
+    s.gymnListeClub   || '', s.gymnListeSearch || '', s.gymnListeSortDir || '',
+    // Liste Clubs
+    s.clubListeGroupe || '', s.clubListeSearch || '', s.clubListeSortDir || '',
+    // Équipes / fiche gymnaste
+    s.clubSortDir || '', s.gymnCompSortDir || '',
+  ].join('|');
+}
+
+/** État de la fiche club (onglet actif + filtres internes). */
+function _keyClubFiche() {
+  const s = state;
+  return [
+    s.clubFicheTab      || '',
+    s.clubFilterSaison  || '', s.clubFilterComp    || '',
+    s.clubFilterTeamCat || '',
+    s.cfEffectifsSaison || '', s.cfEffectifsCat    || '',
+    s.cfPerfShowMinMax  ? '1' : '0',
+  ].join('|');
+}
+
+/** État des pages Analyses (Globales, Club, Détaillées, Comparaison, Groupe). */
+function _keyAnalyses() {
+  const s = state;
+  return [
+    // Analyses Globales
+    s.anaFilterSaison || '', s.anaFilterCat || '', s.anaFilterGroupe || '',
+    s.anaActiveTab    || '', s.anaPctSeuil  || 0,
+    // Analyses Club
+    s.acClub      || '', s.acCat    || '',
+    s.acSaison    || '', s.acGroupe || '',
+    s.acActiveTab || '', s.acPctSeuil || 0, s.acFullScale ? '1' : '0',
+    s.acClubSearch || '',
+    // Analyses Détaillées
+    s.detailList.join(','),
+    s.detailFilterSaison || '', s.detailFilterComp   || '',
+    s.detailFilterGroupe || '', s.detailFilterCat    || '',
+    s.detailFilterClub   || '', s.detailSearch       || '',
+    s.detailPoolPage     || 0,
+    // Comparaison / Groupe
+    s.compareList.join(','),
+    s.compareFilterGroupe || '', s.compareFilterClub || '',
+    s.compareSearch       || '',
+    s.grFilterCat || '', s.grFilterSaison || '',
+  ].join('|');
+}
+
+/** Pages de pagination actives (une valeur par page qui pagine). */
+function _keyPagination() {
+  const s = state;
+  return [
+    s.tablePage     || 1,   // Gymnastes, Classements, Équipes
+    s.gymnListePage || 1,   // Liste Gymnastes
+    s.clubListePage || 1,   // Liste Clubs
+    s.compPage      || 1,   // Compétitions
+    s.acClubPage    || 1,   // Analyses Club
+  ].join('|');
+}
+
+/**
+ * Clé unique de l'état de rendu courant.
+ * Construit par assemblage des helpers ci-dessus.
+ * Deux appels avec le même état → même clé → render sauté.
+ */
+function _buildRenderKey() {
+  return [
+    _keyPage(),
+    _keyMainFilters(),
+    _keyListFilters(),
+    _keyClubFiche(),
+    _keyAnalyses(),
+    _keyPagination(),
+  ].join('§');
+}
+
+/**
+ * Signature des états influençant les graphiques.
+ * Plus restreinte que _buildRenderKey() : exclut la pagination
+ * et les filtres de liste sans graphique associé.
+ * Un changement déclenche initCharts() ; sinon il est sauté.
+ */
+function _chartDataSig() {
+  const s = state;
+  return [
+    s.currentPage, _cache._v,
+    // Filtres principaux (Classements, Home)
+    s.filterSaison || '', s.filterCat || '', s.filterGroupe || '',
+    s.activeAgres  || '',
+    // Fiche gymnaste
+    s.currentGroupe || '',
+    s.currentGymnaste ? (s.currentGymnaste.nom + '|' + s.currentGymnaste.prenom) : '',
+    // Fiche club (onglet actif → graphiques différents)
+    s.currentClub  || '', s.clubFicheTab || '', s.cfPerfShowMinMax ? '1' : '0',
+    // Analyses Globales
+    s.anaFilterSaison || '', s.anaFilterCat || '', s.anaFilterGroupe || '',
+    s.anaActiveTab    || '', s.anaPctSeuil  || 0,
+    // Analyses Club
+    s.acClub || '', s.acCat || '', s.acSaison || '', s.acGroupe || '',
+    s.acActiveTab || '', s.acPctSeuil || 0, s.acFullScale ? '1' : '0',
+    // Analyses Détaillées (sélection = graphiques directs)
+    s.detailList.join(','),
+    s.detailFilterSaison || '', s.detailFilterCat    || '',
+    s.detailFilterGroupe || '', s.detailFilterClub   || '',
+    // Comparaison (les filtres du pool ne changent pas les graphiques,
+    // seule la sélection finale les change)
+    s.compareList.join(','),
+    s.compareFilterGroupe || '', s.compareFilterClub || '',
+    // Groupe géographique
+    s.grFilterCat || '', s.grFilterSaison || '',
+  ].join('§');
+}
+
+/* =========================================================
+   LAZY LOADING DES GRAPHIQUES — IntersectionObserver
+   ─────────────────────────────────────────────────────────
+   Les .chart-wrap hors viewport ne sont pas initialisés immédiatement.
+   Un IntersectionObserver (debounce 80ms) déclenche initCharts() ciblé
+   uniquement quand un canvas entre dans le viewport.
+   Gain majeur sur les pages Analyses avec 10+ graphiques.
+========================================================= */
+
+let _chartObserver = null;
+let _chartObserverTimer = null;
+
+/** Installe l'IntersectionObserver sur les canvas de la page courante. */
+function _installChartObserver() {
+  if (_chartObserver) { _chartObserver.disconnect(); _chartObserver = null; }
+  clearTimeout(_chartObserverTimer);
+
+  const canvases = document.querySelectorAll('.chart-wrap canvas');
+  if (!canvases.length) return;
+
+  _chartObserver = new IntersectionObserver((entries) => {
+    // Debounce 80ms : regroupe plusieurs entrées simultanées
+    clearTimeout(_chartObserverTimer);
+    _chartObserverTimer = setTimeout(() => {
+      if (!entries.some(e => e.isIntersecting)) return;
+      const sig = _chartDataSig();
+      if (sig !== _lastChartsDataSig) {
+        _lastChartsDataSig = sig;
+        initCharts();
+      }
+    }, 80);
+  }, { root: null, rootMargin: '120px 0px', threshold: 0.01 });
+
+  canvases.forEach(c => _chartObserver.observe(c));
+}
+
+/** Titre topbar selon la page courante. */
+function _getPageTitle() {
+  if (state.currentPage === 'groupe' && state.currentGroupe)
+    return `Groupe ${state.currentGroupe} — ${GROUPES[state.currentGroupe]}`;
+  if (state.currentPage === 'club_fiche' && state.currentClub)
+    return state.currentClub;
+  return PAGE_TITLES[state.currentPage] || '';
+}
+
+/**
+ * Point d'entrée unique du rendu. Appelé après chaque mutation d'état.
+ * Flux : titre → garde → lazy-load → skip-key → render → graphiques.
+ */
 function renderPage() {
   const el = document.getElementById('page');
-  const titles = {
-    home:'Accueil', gymnastes_liste:'Gymnastes', competitions:'Compétitions', gymnastes:'Gymnastes',
-    equipes:'Équipes / Clubs', club_fiche:'Fiche Club',
-    classements:'Classements par Agrès', analyses:'Analyses Globales',
-    analyses_detail:'Analyses Détaillées', analyses_club:'Analyses Club', gymnaste_fiche:'Fiche Gymnaste',
-    groupe:'Groupe Géographique', historique:'Historique des imports',
-    export_bdd:'Export de la base de données', migration_supabase:'Migration SQLite → Supabase', gestion_users:'Gestion des Utilisateurs'
-  };
-  const title = state.currentGroupe && state.currentPage==='groupe'
-    ? `Groupe ${state.currentGroupe} — ${GROUPES[state.currentGroupe]}`
-    : state.currentPage==='club_fiche' && state.currentClub
-    ? state.currentClub
-    : titles[state.currentPage] || '';
-  document.getElementById('topbar-title').innerHTML = `<span>UFOLEP GAF</span> — ${title}`;
+  if (!el) return;
 
-  // ── Chargement lazy des partitions ───────────────────────
-  // Si un chargement IDB est déjà en cours, ne pas relancer renderPage
+  // 1. Titre topbar — léger, toujours mis à jour immédiatement
+  document.getElementById('topbar-title').innerHTML =
+    `<span>UFOLEP GAF</span> — ${_getPageTitle()}`;
+
+  // 2. Garde : import ou chargement SQLite en cours
   if (_loadingInProgress) return;
 
-  const globalPages = ['gymnastes','gymnastes_liste','clubs_liste','analyses','analyses_detail','analyses_club','classements',
-                       'competitions','equipes','export_bdd','historique'];
-  const needsAll = globalPages.includes(state.currentPage) && !state.filterSaison;
-  if (needsAll) {
-    const loading = ensureAllSaisonsLoaded(); // async, appellera renderPage() à la fin
-    if (loading) {
-      // Afficher un spinner pendant le chargement IDB et sortir
-      el.innerHTML = `<div class="empty-state">
-        <div class="empty-icon" style="animation:spin 1s linear infinite;display:inline-block">⏳</div>
-        <h3>Chargement des données…</h3></div>`;
-      return;
-    }
-  } else if (state.filterSaison && !_loadedSaisons.has(state.filterSaison)) {
-    const loading = ensureSaisonLoaded(state.filterSaison);
-    if (loading) {
-      el.innerHTML = `<div class="empty-state">
-        <div class="empty-icon" style="animation:spin 1s linear infinite;display:inline-block">⏳</div>
-        <h3>Chargement de la saison ${state.filterSaison}…</h3></div>`;
-      return;
-    }
+  // 3. Lazy loading (SQLite charge tout au démarrage — no-op en pratique,
+  //    conservé pour compatibilité avec d'éventuels modes de chargement futurs)
+  const needsAll = GLOBAL_PAGES.has(state.currentPage) && !state.filterSaison;
+  const spinner  = `<div class="empty-state">
+    <div class="empty-icon" style="animation:spin 1s linear infinite;display:inline-block">⏳</div>
+    <h3>Chargement des données…</h3></div>`;
+  if (needsAll && ensureAllSaisonsLoaded()) {
+    el.innerHTML = spinner; _lastRenderKey = ''; return;
+  }
+  if (state.filterSaison && !_loadedSaisons.has(state.filterSaison)
+      && ensureSaisonLoaded(state.filterSaison)) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-icon" style="animation:spin 1s linear infinite;display:inline-block">⏳</div>
+      <h3>Chargement de la saison ${state.filterSaison}…</h3></div>`;
+    _lastRenderKey = ''; return;
   }
 
-  // Rendu HTML synchrone
-  let html = '';
-  switch (state.currentPage) {
-    case 'home':            html = renderHome();            break;
-    case 'gymnastes_liste': html = renderGymnastesListe();  break;
-    case 'clubs_liste':     html = renderClubsListe();      break;
-    case 'comp_fiche':      html = renderCompFiche();        break;
-    case 'competitions':    html = renderCompetitions();    break;
-    case 'gymnastes':       html = renderGymnastes();       break;
-    case 'equipes':         html = renderEquipes();         break;
-    case 'club_fiche':      html = renderClubFiche();       break;
-    case 'classements':     html = renderClassements();     break;
-    case 'analyses':        html = renderAnalyses();        break;
-    case 'analyses_detail': html = renderAnalysesDetail();  break;
-    case 'analyses_club':   html = renderAnalysesClub();    break;
-    case 'historique':      html = renderHistorique();      break;
-    case 'export_bdd':      html = renderExportBDD();       break;
-    case 'migration_supabase': html = renderMigrationSupabase(); break;
-    case 'gestion_users':     html = renderGestionUsers();      break;
-    case 'gymnaste_fiche':  html = renderGymnastesFiche();  break;
-    case 'groupe':          html = renderGroupe();          break;
-    default:                html = renderHome();
-  }
-  el.innerHTML = html;
+  // 4. Skip total : état identique au render précédent
+  const currentKey = _buildRenderKey();
+  if (currentKey === _lastRenderKey && el.children.length > 0) return;
+  _lastRenderKey = currentKey;
 
+  // 5. Rendu complet via table de routage PAGE_RENDERERS
+  el.innerHTML = (PAGE_RENDERERS[state.currentPage] || renderHome)();
   bindPageEvents();
 
-  // Initialiser les graphiques après que le DOM soit peint (rAF)
-  // → évite le layout thrashing et rend l'interface réactive immédiatement
-  requestAnimationFrame(() => initCharts());
+  // 6. Graphiques après peinture (rAF) — sautés si signature inchangée
+  const chartSig = _chartDataSig();
+  if (_pendingRafId) cancelAnimationFrame(_pendingRafId);
+  _pendingRafId = requestAnimationFrame(() => {
+    _pendingRafId = 0;
+    if (chartSig !== _lastChartsDataSig) {
+      _lastChartsDataSig = chartSig;
+      initCharts();
+    }
+  });
 }
 
 /* =========================================================
@@ -3095,7 +3742,7 @@ function renderHome() {
   const grStats = Object.keys(GROUPES).map(g => {
     const gr = state.results.filter(r=>r.groupe===g);
     const gymG = uniqueGymnastes(gr).length;
-    const topScore = gr.length ? Math.max(...gr.map(r=>r.total)) : 0;
+    const topScore = gr.length ? max(gr.map(r=>r.total)) : 0;
     return `<div class="stat-card ${g==='G1'?'blue':g==='G2'?'red':g==='G3'?'green':g==='GN'?'purple':'gold'}">
       <div class="stat-value">${gymG}</div>
       <div class="stat-label">${g} — ${GROUPES[g].split('/')[0]}</div>
@@ -3167,39 +3814,17 @@ function renderHome() {
 function renderCompetitions() {
   if (state.competitions.length === 0) return emptyState('Aucune compétition','Importez des données pour commencer.');
 
-  const saisons = _cache.get('saisons', () => _cache.get('saisons',()=>[...new Set(state.results.map(r=>r.saison))].sort().reverse()));
-  const cats    = _cache.get('cats', () => _cache.get('cats',()=>[...new Set(state.results.map(r=>r.categorie))].sort()));
+  const saisons = _cache.get('saisons', () => [...new Set(state.results.map(r=>r.saison))].sort().reverse());
+  const cats    = _cache.get('cats', () => [...new Set(state.results.map(r=>r.categorie))].sort());
 
-  const searchQ = state.compSearch ? normalizeName(state.compSearch) : null;
-  const filtered = state.competitions
-    .filter(c => !state.filterSaison || c.saison===state.filterSaison)
-    .filter(c => !state.filterGroupe || c.groupe===state.filterGroupe)
-    .filter(c => !state.filterCat   || c.categories.includes(state.filterCat))
-    .filter(c => !searchQ || normalizeName(c.nom).includes(searchQ))
-    .sort((a,b) => {
-      const dir = state.compSortDir==='asc' ? 1 : -1;
-      switch(state.compSortCol) {
-        case 'nom':    return dir * a.nom.localeCompare(b.nom);
-        case 'groupe': return dir * a.groupe.localeCompare(b.groupe);
-        case 'saison': return dir * a.saison.localeCompare(b.saison);
-        case 'nb':     return dir * (state.results.filter(r=>r.compId===a.id).length - state.results.filter(r=>r.compId===b.id).length);
-        case 'date':
-        default: return dir * a.date.localeCompare(b.date);
-      }
-    });
-
-  // Pagination
+  // Filtre + tri mémoïsés — recalculés uniquement si données/filtres/tri changent
+  const filtered = getFilteredAndSortedComps();
+  // Pagination restaurée
   const COMP_PAGE_SIZE = 20;
-  const totalPages = Math.ceil(filtered.length / COMP_PAGE_SIZE);
-  if (state.compPage > totalPages) state.compPage = Math.max(1, totalPages);
-  const paged = filtered.slice((state.compPage-1)*COMP_PAGE_SIZE, state.compPage*COMP_PAGE_SIZE);
+  const { items: paged, page: _compPage } = paginateData(filtered, state.compPage, COMP_PAGE_SIZE);
+  state.compPage = _compPage;
 
-  const thC = (col, label) => {
-    const active = state.compSortCol === col;
-    const arrow = active ? (state.compSortDir==='asc'?'▲':'▼') : '⇅';
-    return `<th class="${active?'sorted':''}" onclick="setCompSort('${col}')" style="cursor:pointer;white-space:nowrap">
-      ${label} <span class="sort-arrow" style="opacity:${active?1:.4}">${arrow}</span></th>`;
-  };
+  const thC = (col, label) => makeSortHeader(col, label, state.compSortCol, state.compSortDir, 'setCompSort');
 
   const rows = paged.map(c => {
     // Tous les résultats de cette compétition
@@ -3253,7 +3878,7 @@ function renderCompetitions() {
       <td>${allRes.length}</td>
       <td>${c.saison}</td>
     </tr>`;
-  }).join('');
+  });
 
   return `
     <div class="section-title">Compétitions</div>
@@ -3289,20 +3914,15 @@ function renderCompetitions() {
       <div class="table-wrap">
         <table>
           <thead><tr>
-            ${thC('date','Date')}
-            ${thC('groupe','Groupe')}
-            ${thC('nom','Compétition')}
-            <th>Catégories</th>
-            <th>🏆 Équipe vainqueur</th>
-            <th>🥇 Vainqueur individuel</th>
-            ${thC('nb','Participants')}
-            ${thC('saison','Saison')}
+            ${thC('date','Date')} ${thC('groupe','Groupe')} ${thC('nom','Compétition')}
+            <th>Catégories</th><th>🏆 Équipe vainqueur</th><th>🥇 Vainqueur individuel</th>
+            ${thC('nb','Participants')} ${thC('saison','Saison')}
           </tr></thead>
-          <tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--c-text3)">Aucune compétition</td></tr>'}</tbody>
+          <tbody>${rows.join('') || '<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--c-text3)">Aucune compétition</td></tr>'}</tbody>
         </table>
       </div>
     </div>
-    ${buildPagination(filtered.length, COMP_PAGE_SIZE, state.compPage, 'goCompPage')}`;
+    <div>${buildPagination(filtered.length, COMP_PAGE_SIZE, state.compPage, 'goCompPage')}</div>`;
 }
 /* =========================================================
    PAGE: FICHE COMPÉTITION
@@ -3480,35 +4100,9 @@ function renderClubsListe() {
   const CLUBS_PAGE = 30;
   const allCats    = _cache.get('cats',  ()=>[...new Set(state.results.map(r=>r.categorie))].sort());
 
-  // Construire la liste des clubs avec stats
-  const clubMap = {};
-  state.results.forEach(r => {
-    const c = normalizeClub(r.club); if (!c) return;
-    if (!clubMap[c]) clubMap[c] = { nom:c, gymns:new Set(), cats:new Set(), comps:new Set(), groupes:{}, totals:[] };
-    clubMap[c].gymns.add(gymKey(r.nom, r.prenom));
-    clubMap[c].cats.add(r.categorie);
-    clubMap[c].comps.add(r.compId);
-    clubMap[c].groupes[r.groupe] = (clubMap[c].groupes[r.groupe]||0)+1;
-    if (r.total>0) clubMap[c].totals.push(r.total);
-  });
-
-  // Filtres
-  const searchQ = state.clubListeSearch ? normalizeName(state.clubListeSearch) : null;
-  let clubs = Object.values(clubMap).map(c => {
-    const groupe = Object.entries(c.groupes).sort((a,b)=>b[1]-a[1])[0]?.[0]||'';
-    return {
-      nom: c.nom, groupe,
-      gymn:  c.gymns.size,
-      cats:  c.cats.size,
-      comps: c.comps.size,
-      avg:   c.totals.length ? avg(c.totals) : 0,
-      best:  c.totals.length ? Math.max(...c.totals) : 0,
-    };
-  });
-
-  // Appliquer filtres
-  if (state.clubListeGroupe) clubs = clubs.filter(c=>c.groupe===state.clubListeGroupe);
-  if (searchQ)               clubs = clubs.filter(c=>normalizeName(c.nom).includes(searchQ));
+  // ── Données agrégées mémoïsées (O(n) sur state.results) ──
+  // getClubsListe() ne recalcule que si données ou filtres changent.
+  let clubs = [...getClubsListe()]; // copie superficielle pour trier sans muter le cache
 
   // Tri
   const dir = state.clubListeSortDir==='asc'?1:-1;
@@ -3524,17 +4118,11 @@ function renderClubsListe() {
     }
   });
 
-  // Pagination
-  const totalPages = Math.ceil(clubs.length / CLUBS_PAGE);
-  if (state.clubListePage > totalPages) state.clubListePage = Math.max(1, totalPages);
-  const paged = clubs.slice((state.clubListePage-1)*CLUBS_PAGE, state.clubListePage*CLUBS_PAGE);
+  // Pagination restaurée
+  const { items: paged, total: _clubTotal, page: _clubPage } = paginateData(clubs, state.clubListePage, 30);
+  state.clubListePage = _clubPage;
 
-  const th = (col, label, align='') => {
-    const active = state.clubListeSortCol === col;
-    const arrow  = active ? (state.clubListeSortDir==='asc'?'▲':'▼') : '⇅';
-    return `<th style="cursor:pointer;${align?'text-align:'+align:''}" onclick="setClubsListeSort('${col}')">
-      ${label} <span style="opacity:${active?1:.35}">${arrow}</span></th>`;
-  };
+  const th = (col, label, align='') => makeSortHeader(col, label, state.clubListeSortCol, state.clubListeSortDir, 'setClubsListeSort', align);
 
   const rows = paged.map(c => {
     const nomSafe = c.nom.replace(/'/g,"\\'");
@@ -3555,7 +4143,7 @@ function renderClubsListe() {
       <td style="text-align:right;font-size:13px;color:var(--c-text2)">${c.avg>0?c.avg.toFixed(2):'—'}</td>
       <td style="text-align:right"><strong class="${noteColor(c.best,80)}">${c.best>0?c.best.toFixed(3):'—'}</strong></td>
     </tr>`;
-  }).join('');
+  });
 
   const hasFilter = state.clubListeGroupe || state.clubListeSearch;
 
@@ -3589,16 +4177,11 @@ function renderClubsListe() {
             ${th('avg','Moy. total','right')}
             ${th('best','Meilleur','right')}
           </tr></thead>
-          <tbody>
-            ${rows||`<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--c-text3)">
-              <div style="font-size:32px;margin-bottom:8px">🔍</div>
-              Aucun club trouvé
-            </td></tr>`}
-          </tbody>
+          <tbody>${rows.join('') || '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--c-text3)"><div style="font-size:32px;margin-bottom:8px">🔍</div>Aucun club trouvé</td></tr>'}</tbody>
         </table>
       </div>
-      ${buildPagination(clubs.length, CLUBS_PAGE, state.clubListePage, 'goClubsListePage')}
-    </div>`;
+    </div>
+    <div>${buildPagination(clubs.length, 30, state.clubListePage, 'goClubsListePage')}</div>`;
 }
 
 /* =========================================================
@@ -3613,48 +4196,10 @@ function renderGymnastesListe() {
   const allCats  = _cache.get('cats',  ()=>[...new Set(state.results.map(r=>r.categorie))].sort());
   const allClubs = _cache.get('clubs', ()=>[...new Set(state.results.map(r=>normalizeClub(r.club)).filter(Boolean))].sort());
 
-  // ── Construire la liste des gymnastes uniques avec stats ──
-  const searchQ = state.gymnListeSearch ? normalizeName(state.gymnListeSearch) : null;
-
-  const gymnMap = {};
-  state.results.forEach(r => {
-    // Filtres
-    if (state.gymnListeGroupe && r.groupe    !== state.gymnListeGroupe) return;
-    if (state.gymnListeCat    && r.categorie !== state.gymnListeCat)    return;
-    if (state.gymnListeClub   && normalizeClub(r.club) !== state.gymnListeClub) return;
-    if (searchQ) {
-      if (!normalizeName(`${r.nom} ${r.prenom} ${r.club}`).includes(searchQ)) return;
-    }
-    const key = gymKey(r.nom, r.prenom);
-    if (!gymnMap[key]) {
-      gymnMap[key] = {
-        key, nom: r.nom, prenom: r.prenom,
-        club: normalizeClub(r.club) || r.club,
-        categorie: r.categorie, groupe: r.groupe,
-        annee: r.annee || '',
-        totals: [], comps: new Set()
-      };
-    }
-    const g = gymnMap[key];
-    if (r.total > 0) g.totals.push(r.total);
-    g.comps.add(r.compId);
-    // Garder la catégorie et groupe les plus récents
-    if (!g._lastDate || r.date > g._lastDate) {
-      g._lastDate = r.date;
-      g.categorie = r.categorie;
-      g.groupe    = r.groupe;
-      g.club      = normalizeClub(r.club) || r.club;
-      if (r.annee) g.annee = r.annee;
-    }
-  });
-
-  // Convertir en tableau avec stats calculées
-  let gymns = Object.values(gymnMap).map(g => ({
-    ...g,
-    nbComps:   g.comps.size,
-    avgTotal:  g.totals.length ? g.totals.reduce((a,b)=>a+b,0)/g.totals.length : 0,
-    bestTotal: g.totals.length ? Math.max(...g.totals) : 0,
-  }));
+  // ── Données agrégées mémoïsées (O(n) sur state.results) ──
+  // getGymnastesListe() ne recalcule que si données ou filtres changent.
+  // Le tri est appliqué ici car il change souvent (moins coûteux que l'agrégation).
+  let gymns = [...getGymnastesListe()]; // copie superficielle pour trier sans muter le cache
 
   // ── Tri ───────────────────────────────────────────────────
   const dir = state.gymnListeSortDir === 'asc' ? 1 : -1;
@@ -3680,19 +4225,11 @@ function renderGymnastesListe() {
   const filteredCount   = gymns.length;
   const clubsRepresented = new Set(gymns.map(g=>g.club).filter(Boolean)).size;
 
-  // ── Pagination ────────────────────────────────────────────
-  const totalPages = Math.ceil(gymns.length / GYMN_PAGE_SIZE);
-  if (state.gymnListePage > totalPages) state.gymnListePage = Math.max(1, totalPages);
-  const paged = gymns.slice((state.gymnListePage-1)*GYMN_PAGE_SIZE, state.gymnListePage*GYMN_PAGE_SIZE);
+  // Pagination restaurée
+  const { items: paged, total: _gymTotal, totalPages, page: _gymnPage } = paginateData(gymns, state.gymnListePage, 30);
+  state.gymnListePage = _gymnPage;
 
-  // ── Helper en-tête triable ────────────────────────────────
-  const th = (col, label, align='') => {
-    const active = state.gymnListeSortCol === col;
-    const arrow  = active ? (state.gymnListeSortDir==='asc'?'▲':'▼') : '⇅';
-    return `<th class="${active?'sorted':''}" style="cursor:pointer;${align?'text-align:'+align:''}"
-      onclick="setGymnListeSort('${col}')">
-      ${label} <span class="sort-arrow" style="opacity:${active?1:.4}">${arrow}</span></th>`;
-  };
+  const th = (col, label, align='') => makeSortHeader(col, label, state.gymnListeSortCol, state.gymnListeSortDir, 'setGymnListeSort', align);
 
   // ── Lignes du tableau ─────────────────────────────────────
   const rows = paged.map(g => {
@@ -3718,7 +4255,7 @@ function renderGymnastesListe() {
           color:#fff;font-size:12px;font-weight:700">${g.nbComps}</span>
       </td>
     </tr>`;
-  }).join('');
+  });
 
   const hasFilters = state.gymnListeGroupe || state.gymnListeCat || state.gymnListeClub || state.gymnListeSearch;
 
@@ -3771,7 +4308,6 @@ function renderGymnastesListe() {
       </div>
     </div>
 
-    <!-- Tableau -->
     <div class="card">
       <div class="table-wrap">
         <table>
@@ -3785,52 +4321,28 @@ function renderGymnastesListe() {
             ${th('bestTotal','Meilleur','right')}
             ${th('nbComps','Compétitions','center')}
           </tr></thead>
-          <tbody>
-            ${rows || `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--c-text3)">
-              <div style="font-size:32px;margin-bottom:8px">🔍</div>
-              <strong>Aucun résultat</strong><br>
-              <span style="font-size:13px">Modifiez les filtres ou la recherche</span>
-            </td></tr>`}
-          </tbody>
+          <tbody>${rows.join('') || '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--c-text3)"><div style="font-size:32px;margin-bottom:8px">🔍</div><strong>Aucun résultat</strong></td></tr>'}</tbody>
         </table>
       </div>
-      ${buildPagination(gymns.length, GYMN_PAGE_SIZE, state.gymnListePage, 'goGymnListePage')}
-    </div>`;
+    </div>
+    <div>${buildPagination(gymns.length, 30, state.gymnListePage, 'goGymnListePage')}</div>`;
 }
 
 /* =========================================================
    PAGE: CLASSEMENTS INDIVIDUELS (tableau résultats bruts)
 ========================================================= */
 function renderGymnastes() {
-  const data = getFilteredResults();
+  // Filtrage + tri mémoïsés — recalculés uniquement si données/filtres/tri changent
+  const sorted = getFilteredAndSorted();
   const saisons = _cache.get('saisons',()=>[...new Set(state.results.map(r=>r.saison))].sort().reverse());
   const comps   = state.competitions;
   const cats    = _cache.get('cats',()=>[...new Set(state.results.map(r=>r.categorie))].sort());
-  const clubs   = _cache.get('clubs', () => _cache.get('clubs',()=>[...new Set(state.results.map(r=>normalizeClub(r.club)).filter(Boolean))].sort()));
+  const clubs   = _cache.get('clubs', () => [...new Set(state.results.map(r=>normalizeClub(r.club)).filter(Boolean))].sort());
 
-  // Sort — si recherche active : date décroissante (plus récent en haut), rang en secondaire
-  const sorted = [...data].sort((a,b) => {
-    if (state.filterSearch) {
-      const dateCmp = (b.date||'').localeCompare(a.date||'');
-      if (dateCmp !== 0) return dateCmp;
-      return a.rang - b.rang;
-    }
-    let va = a[state.sortCol] ?? (a.agres?.[state.sortCol]?.final ?? 0);
-    let vb = b[state.sortCol] ?? (b.agres?.[state.sortCol]?.final ?? 0);
-    if (typeof va === 'string') return state.sortDir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-    return state.sortDir==='asc' ? va-vb : vb-va;
-  });
+  const { items: paged, page: _tblPage } = paginateData(sorted, state.tablePage, PAGE_SIZE);
+  state.tablePage = _tblPage;
 
-  // Paginate
-  const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
-  const paged = sorted.slice((state.tablePage-1)*PAGE_SIZE, state.tablePage*PAGE_SIZE);
-
-  const thSort = (col, label) => {
-    const arrow = state.sortCol===col ? (state.sortDir==='asc'?'▲':'▼') : '⇅';
-    const active = state.sortCol===col ? 'sorted' : '';
-    return `<th class="${active}" onclick="setSortAndRender('${col}')">
-      ${label} <span class="sort-arrow">${arrow}</span></th>`;
-  };
+  const thSort = (col, label) => makeSortHeader(col, label, state.sortCol, state.sortDir, 'setSortAndRender');
 
   const rows = paged.map(r => {
     const rankClass = r.rang===1?'rank-1':r.rang===2?'rank-2':r.rang===3?'rank-3':'rank-other';
@@ -3847,13 +4359,12 @@ function renderGymnastes() {
       ${AGRES.map(ag=>`<td class="${noteColor(r.agres?.[ag.code]?.final||0)}">${fmt(r.agres?.[ag.code]?.final)}</td>`).join('')}
       <td><strong class="${noteColor(r.total,80)}">${fmt(r.total)}</strong></td>
     </tr>`;
-  }).join('');
+  });
 
-  const pagination = buildPagination(sorted.length, PAGE_SIZE, state.tablePage, 'goPage');
 
   return `
     <div class="section-title">Tableau général</div>
-    <div class="section-sub">${data.length} résultat${data.length>1?'s':''}</div>
+    <div class="section-sub">${sorted.length} résultat${sorted.length>1?'s':''}</div>
     <div class="filters-bar">
       <div class="filter-group"><label>Saison</label>
         <select onchange="state.filterSaison=this.value;state.tablePage=1;renderPage()">
@@ -3895,22 +4406,17 @@ function renderGymnastes() {
       <div class="table-wrap">
         <table>
           <thead><tr>
-            ${thSort('rang','#')}
-            ${thSort('nom','Gymnaste')}
-            ${thSort('club','Club')}
-            ${thSort('categorie','Catégorie')}
-            ${thSort('annee','Née')}
-            <th>Groupe</th>
-            <th>Date</th>
-            <th>Compétition</th>
-            ${AGRES.map(ag=>`${thSort(`VT_${ag.code}`,ag.code)}`).join('')}
+            ${thSort('rang','#')} ${thSort('nom','Gymnaste')} ${thSort('club','Club')}
+            ${thSort('categorie','Catégorie')} ${thSort('annee','Née')}
+            <th>Groupe</th><th>Date</th><th>Compétition</th>
+            ${AGRES.map(ag=>`${thSort('VT_'+ag.code,ag.code)}`).join('')}
             ${thSort('total','Total')}
           </tr></thead>
-          <tbody>${rows || '<tr><td colspan="13" style="text-align:center;padding:30px;color:var(--c-text3)">Aucun résultat</td></tr>'}</tbody>
+          <tbody>${rows.join('') || '<tr><td colspan="13" style="text-align:center;padding:30px;color:var(--c-text3)">Aucun résultat</td></tr>'}</tbody>
         </table>
       </div>
-      ${pagination}
-    </div>`;
+    </div>
+    <div>${buildPagination(sorted.length, PAGE_SIZE, state.tablePage, 'goPage')}</div>`;
 }
 
 /* =========================================================
@@ -4017,13 +4523,7 @@ function renderGymnastesFiche() {
     </tr>`;
   }).join('');
 
-  // Competition history — triable
-  const thG = (col, label) => {
-    const active = state.gymnCompSortCol === col;
-    const arrow = active ? (state.gymnCompSortDir==='asc'?'▲':'▼') : '⇅';
-    return `<th class="${active?'sorted':''}" onclick="setGymnCompSort('${col}')" style="cursor:pointer;white-space:nowrap">
-      ${label} <span class="sort-arrow" style="opacity:${active?1:.4}">${arrow}</span></th>`;
-  };
+  const thG = (col, label) => makeSortHeader(col, label, state.gymnCompSortCol, state.gymnCompSortDir, 'setGymnCompSort');
 
   const sortedComps = [...gymResults].sort((a,b) => {
     const dir = state.gymnCompSortDir==='asc' ? 1 : -1;
@@ -4322,17 +4822,12 @@ function renderEquipes() {
   });
 
   // ── Pagination ────────────────────────────────────────────
+  // Pagination restaurée
   const totalPages = Math.ceil(data.length / PAGE_SIZE);
-  const paged = data.slice((state.tablePage-1)*PAGE_SIZE, state.tablePage*PAGE_SIZE);
+  const { items: paged, page: _tblPage2 } = paginateData(data, state.tablePage, PAGE_SIZE);
+  state.tablePage = _tblPage2;
 
-  // ── Helper en-tête triable ────────────────────────────────
-  const thE = (col, label) => {
-    const active = state.clubSortCol === col;
-    const arrow  = active ? (state.clubSortDir==='asc'?'▲':'▼') : '⇅';
-    return `<th class="${active?'sorted':''}" onclick="setClubSort('${col}')">
-      ${label} <span class="sort-arrow" style="opacity:${active?1:.4}">${arrow}</span>
-    </th>`;
-  };
+  const thE = (col, label) => makeSortHeader(col, label, state.clubSortCol, state.clubSortDir, 'setClubSort');
 
   // ── Lignes ────────────────────────────────────────────────
   const rows = paged.map(t => {
@@ -4364,10 +4859,9 @@ function renderEquipes() {
       <td>${pctBar}</td>
       <td>${qBadge}</td>
     </tr>`;
-  }).join('');
+  });
 
   // ── Pagination HTML ───────────────────────────────────────
-  const pagination = buildPagination(data.length, PAGE_SIZE, state.tablePage, 'goPage');
 
   return `
     <div class="section-title">Classements par Équipe</div>
@@ -4408,23 +4902,16 @@ function renderEquipes() {
       <div class="table-wrap">
         <table>
           <thead><tr>
-            ${thE('rang','#')}
-            ${thE('equipeNom','Équipe')}
-            ${thE('categorie','Catégorie')}
-            ${thE('groupe','Groupe')}
-            ${thE('date','Date')}
-            <th>Compétition</th>
-            ${thE('saison','Saison')}
-            ${AGRES.map(ag=>thE(ag.code,`${ag.icon} ${ag.code}`)).join('')}
-            ${thE('total','Total')}
-            ${thE('pct','%')}
-            <th>Finale</th>
+            ${thE('rang','#')} ${thE('equipeNom','Équipe')} ${thE('categorie','Catégorie')}
+            ${thE('groupe','Groupe')} ${thE('date','Date')} <th>Compétition</th>
+            ${thE('saison','Saison')} ${AGRES.map(ag=>thE(ag.code,ag.icon+' '+ag.code)).join('')}
+            ${thE('total','Total')} ${thE('pct','%')} <th>Finale</th>
           </tr></thead>
-          <tbody>${rows || '<tr><td colspan="14" style="text-align:center;padding:30px;color:var(--c-text3)">Aucun résultat par équipe</td></tr>'}</tbody>
+          <tbody>${rows.join('') || '<tr><td colspan="14" style="text-align:center;padding:30px;color:var(--c-text3)">Aucun résultat par équipe</td></tr>'}</tbody>
         </table>
       </div>
-      ${pagination}
-    </div>`;
+    </div>
+    <div>${buildPagination(data.length, PAGE_SIZE, state.tablePage, 'goPage')}</div>`;
 }
 
 /* =========================================================
@@ -4963,11 +5450,10 @@ function renderAnalyses() {
   const allSaisons = _cache.get('saisons',()=>[...new Set(state.results.map(r=>r.saison))].sort().reverse());
   const allCats    = _cache.get('cats',()=>[...new Set(state.results.map(r=>r.categorie))].sort());
 
-  const anaData = state.results.filter(r => {
-    if (state.anaFilterSaison && r.saison    !== state.anaFilterSaison) return false;
-    if (state.anaFilterCat    && r.categorie !== state.anaFilterCat)    return false;
-    if (state.anaFilterGroupe && r.groupe    !== state.anaFilterGroupe) return false;
-    return true;
+  const anaData = filterResultsBy({
+    saison: state.anaFilterSaison,
+    cat:    state.anaFilterCat,
+    groupe: state.anaFilterGroupe,
   });
 
   // Heatmap (groupes × agrès)
@@ -5253,7 +5739,8 @@ function renderAnalysesClub() {
     // Pagination
     const totalPagesAC = Math.ceil(availableClubs.length / AC_PAGE_SIZE);
     if (state.acClubPage > totalPagesAC) state.acClubPage = Math.max(1, totalPagesAC);
-    const pagedClubs = availableClubs.slice((state.acClubPage-1)*AC_PAGE_SIZE, state.acClubPage*AC_PAGE_SIZE);
+    const { items: pagedClubs, page: _acPage } = paginateData(availableClubs, state.acClubPage, AC_PAGE_SIZE);
+    state.acClubPage = _acPage;
 
     const cards = pagedClubs.map(club => {
       const clubData = baseData.filter(r=>normalizeClub(r.club)===club);
@@ -5316,7 +5803,7 @@ function renderAnalysesClub() {
       const catData   = clubData.filter(r=>r.categorie===cat);
       const gymn      = uniqueGymnastes(catData).length;
       const comps     = [...new Set(catData.map(r=>r.compId))].length;
-      const bestTotal = Math.max(...catData.map(r=>r.total).filter(v=>v>0));
+      const bestTotal = max(catData.map(r=>r.total).filter(v=>v>0));
       const avgTotal  = avg(catData.map(r=>r.total).filter(v=>v>0));
       return `<div class="card" style="cursor:pointer;transition:.2s"
         onclick="state.acCat='${cat.replace(/'/g,"\\'")}';renderPage()"
@@ -5368,13 +5855,13 @@ function renderAnalysesClub() {
     { label:'Gymnastes',    value:gymns.length,          color:'blue' },
     { label:'Compétitions', value:comps.length,          color:'green' },
     { label:'Total moyen',  value:avg(totals).toFixed(2),color:'gold' },
-    { label:'Meilleur total',value:Math.max(...totals).toFixed(3),color:'red' },
+    { label:'Meilleur total',value:max(totals).toFixed(3),color:'red' },
   ].map(s=>`<div class="stat-card ${s.color}"><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join('');
 
   // ── Top 5 gymnastes (meilleur total) ────────────────────
   const top5 = gymns.map(g=>{
     const gr = catData.filter(r=>gymKey(r.nom,r.prenom)===gymKey(g.nom,g.prenom));
-    return { nom:g.nom, prenom:g.prenom, best:Math.max(...gr.map(r=>r.total)), avg:avg(gr.map(r=>r.total)) };
+    return { nom:g.nom, prenom:g.prenom, best:max(gr.map(r=>r.total)), avg:avg(gr.map(r=>r.total)) };
   }).sort((a,b)=>b.best-a.best).slice(0,6);
 
   const top5Rows = top5.map((g,i)=>`<tr>
@@ -5574,18 +6061,13 @@ function renderAnalysesDetail() {
   const allClubs   = _cache.get('clubs',()=>[...new Set(state.results.map(r=>normalizeClub(r.club)).filter(Boolean))].sort());
 
   // Pool de résultats filtré (pour déterminer quels gymnastes apparaissent)
-  const filteredPool = state.results.filter(r => {
-    if (state.detailFilterSaison && r.saison    !== state.detailFilterSaison) return false;
-    if (state.detailFilterComp   && r.compId    !== state.detailFilterComp)   return false;
-    if (state.detailFilterGroupe && r.groupe    !== state.detailFilterGroupe)  return false;
-    if (state.detailFilterCat    && r.categorie !== state.detailFilterCat)     return false;
-    if (state.detailFilterClub   && r.club      !== state.detailFilterClub)    return false;
-    if (state.detailSearch) {
-      const q = normalizeName(state.detailSearch);
-      if (!normalizeName(`${r.nom} ${r.prenom} ${r.club}`).includes(q)) return false;
-    }
-    return true;
-  });
+  const filteredPool = filterResultsBy({
+    saison: state.detailFilterSaison,
+    cat:    state.detailFilterCat,
+    groupe: state.detailFilterGroupe,
+    club:   state.detailFilterClub,
+    search: state.detailSearch,
+  }).filter(r => !state.detailFilterComp || r.compId === state.detailFilterComp);
 
   const poolGymnastes = uniqueGymnastes(filteredPool)
     .sort((a,b) => a.nom.localeCompare(b.nom));
@@ -6010,98 +6492,6 @@ function renderHistorique() {
       </div>
     </div>`;
 }
-
-/* =========================================================
-   RÉCUPÉRATION D'URGENCE
-   Récupère TOUTES les données depuis SQLite,
-   même si le meta est corrompu ou incomplet.
-   Reconstruit ensuite l'historique depuis les données récupérées.
-========================================================= */
-function recoverAllPartitions() {
-  showLoading('Récupération des données en cours…');
-  setTimeout(() => {
-    let recoveredInd = 0, recoveredTeams = 0;
-    const recoveredSaisons = new Set();
-
-    // 1. Scanner toutes les clés localStorage
-    const allKeys = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      allKeys.push(localStorage.key(i));
-    }
-
-    // 2. Trouver toutes les partitions ind et teams
-    const indKeys   = allKeys.filter(k => k && k.startsWith('ufolep_gaf_ind_'));
-    const teamKeys  = allKeys.filter(k => k && k.startsWith('ufolep_gaf_teams_'));
-
-    indKeys.forEach(key => {
-      const saison = key.replace('ufolep_gaf_ind_', '');
-      if (_loadedSaisons.has(saison)) return; // déjà en RAM
-      try {
-        const data = _lzRead(key) || [];
-        if (!data.length) return;
-        const existingIds = new Set(state.results.map(r => r.compId));
-        data.forEach(r => { if (!existingIds.has(r.compId)) state.results.push(r); });
-        recoveredInd += data.length;
-        recoveredSaisons.add(saison);
-        _loadedSaisons.add(saison);
-      } catch(e) { console.warn('Recovery error for', key, e); }
-    });
-
-    teamKeys.forEach(key => {
-      const saison = key.replace('ufolep_gaf_teams_', '');
-      try {
-        const data = _lzRead(key) || [];
-        if (!data.length) return;
-        const existingIds = new Set(state.teamResults.map(t => t.compId));
-        data.forEach(t => { if (!existingIds.has(t.compId)) state.teamResults.push(t); });
-        recoveredTeams += data.length;
-        recoveredSaisons.add(saison);
-      } catch(e) { console.warn('Recovery error for', key, e); }
-    });
-
-    // 3. Reconstruire l'historique si nécessaire depuis les données récupérées
-    if (recoveredInd > 0 && state.importHistory.length === 0) {
-      // Créer une entrée de récupération par saison
-      const saisonMap = {};
-      state.results.forEach(r => {
-        if (!saisonMap[r.saison]) saisonMap[r.saison] = { compIds: new Set(), ind: 0, teams: 0 };
-        saisonMap[r.saison].compIds.add(r.compId);
-        saisonMap[r.saison].ind++;
-      });
-      state.teamResults.forEach(t => {
-        if (!saisonMap[t.saison]) saisonMap[t.saison] = { compIds: new Set(), ind: 0, teams: 0 };
-        saisonMap[t.saison].teams++;
-      });
-      Object.entries(saisonMap).forEach(([saison, d]) => {
-        state.importHistory.push({
-          id:          'recovered_' + saison,
-          importedAt:  new Date().toISOString(),
-          label:       `[Récupéré] Saison ${saison}`,
-          compIds:     [...d.compIds],
-          teamCompIds: [...d.compIds],
-          nbInd:       d.ind,
-          nbTeams:     d.teams,
-        });
-      });
-    }
-
-    // 4. Remettre à jour meta + historique + cache
-    _fixSaisons();
-    deriveCompetitions();
-    saveAll();
-    _cache.invalidate();
-    updateNavBadges();
-    updateStorageIndicator();
-    renderPage();
-
-    if (recoveredInd > 0 || recoveredTeams > 0) {
-      toast(`✅ Récupération terminée — ${recoveredInd} résultats ind. · ${recoveredTeams} équipes · ${recoveredSaisons.size} saison${recoveredSaisons.size>1?'s':''}`, 'success');
-    } else {
-      toast('Aucune donnée supplémentaire trouvée dans le stockage local.', 'error');
-    }
-  }, 50);
-}
-
 
 /* ─── Suppression d'un import ─────────────────────────────── */
 function deleteImport(importId) {
@@ -6809,19 +7199,93 @@ function emptyState(title, msg) {
 /* =========================================================
    CHARTS INITIALIZATION
 ========================================================= */
+// Registre des instances Chart.js actives (id → instance)
 const chartInstances = {};
 
-function destroyChart(id) {
-  if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+// Cache de hash par canvas (id → dernière signature encodée).
+// Évite de recalculer _chartDataHash() et de re-comparer à chaque mkChart().
+// Clé : id du canvas. Valeur : résultat de _chartDataHash(config) au dernier render.
+const _chartDataSignatures = {};
+
+/**
+ * Calcule une signature légère d'un graphique pour détecter les vrais changements.
+ *
+ * Encode (séparateurs différents pour éviter les collisions) :
+ *   §  sépare les trois sections  : labels axe X | labels légende | valeurs
+ *   ~  sépare les datasets
+ *   ,  sépare les valeurs d'un dataset
+ *
+ * Concaténation plate intentionnelle : plus rapide que JSON.stringify
+ * (pas d'arbre JSON intermédiaire, O(n) direct sur les valeurs).
+ *
+ * Limites connues et acceptées :
+ *   • Couleurs / options visuelles non encodées → gérées par toggleTheme()
+ *     qui détruit toutes les instances avant de rappeler initCharts().
+ *   • Type de graphique non encodé → géré par la vérification config.type
+ *     dans mkChart() (déclenche une recréation complète si changé).
+ */
+function _chartDataHash(config) {
+  try {
+    const datasets = config.data.datasets || [];
+    const axisLabels = (config.data.labels || []).join(',');
+    const dsLabels   = datasets.map(ds => ds.label ?? '').join('~');
+    const dsValues   = datasets.map(ds => (ds.data || []).join(',')).join('~');
+    return axisLabels + '§' + dsLabels + '§' + dsValues;
+  } catch (_) { return ''; }
 }
 
+/**
+ * Détruit une instance Chart.js et supprime ses entrées de cache.
+ */
+function destroyChart(id) {
+  if (chartInstances[id]) {
+    chartInstances[id].destroy();
+    delete chartInstances[id];
+    delete _chartDataSignatures[id];
+  }
+}
+
+/**
+ * Détruit toutes les instances Chart.js dont le canvas n'est plus dans le DOM.
+ * Appelé en début de initCharts() pour éviter les fuites mémoire après navigation.
+ */
+function _destroyOrphanCharts() {
+  for (const id of Object.keys(chartInstances)) {
+    if (!document.getElementById(id)) destroyChart(id);
+  }
+}
+
+/**
+ * Crée ou met à jour un graphique Chart.js.
+ *
+ * Logique de décision (dans l'ordre) :
+ *  1. Canvas absent ou onglet caché           → skip silencieux
+ *  2. Instance valide (même canvas, même type) :
+ *     a. Signature inchangée (données + labels) → skip total
+ *     b. Signature changée                     → update('none') sans animation
+ *  3. Instance orpheline ou type changé       → destroy + new Chart()
+ *
+ * Note : les changements de couleur/thème sont gérés par toggleTheme()
+ * qui détruit toutes les instances avant de rappeler initCharts().
+ */
 function mkChart(id, config) {
   const canvas = document.getElementById(id);
   if (!canvas) return;
-  // Ne pas initialiser si le canvas est dans un tab caché
   if (canvas.closest('.tab-panel') && !canvas.closest('.tab-panel.active')) return;
+
+  const existing = chartInstances[id];
+  if (existing && existing.canvas === canvas && existing.config.type === config.type) {
+    const newSig = _chartDataHash(config);
+    if (newSig && newSig === _chartDataSignatures[id]) return; // rien à faire
+    existing.data = config.data;
+    if (config.options) existing.options = config.options;
+    existing.update('none');
+    _chartDataSignatures[id] = newSig;
+    return;
+  }
   destroyChart(id);
   chartInstances[id] = new Chart(canvas.getContext('2d'), config);
+  _chartDataSignatures[id] = _chartDataHash(config);
 }
 
 function chartDefaults() {
@@ -6833,27 +7297,65 @@ function chartDefaults() {
   };
 }
 
+/* =========================================================
+   GRAPHIQUES — fonctions par domaine de page
+   Appelées depuis initCharts() ou directement.
+========================================================= */
+
+/** Graphiques de la page d'accueil */
+function _chartsHome(textColor, gridColor) {
+  if (!document.getElementById('chart-home-groupe')) return;
+  const grLabels = Object.keys(GROUPES);
+  const grCounts = grLabels.map(g => state.results.filter(r=>r.groupe===g).length);
+  mkChart('chart-home-groupe', {
+    type:'doughnut',
+    data:{ labels:grLabels, datasets:[{ data:grCounts, backgroundColor: Object.values(GROUPE_COLORS), borderWidth:0 }] },
+    options:{ plugins:{ legend:{ position:'right' } }, cutout:'60%', responsive:true, maintainAspectRatio:false }
+  });
+  const cats = _cache.get('homeChartCats', () => [...new Set(state.results.map(r=>r.categorie))]);
+  const catAvg = cats.map(c => avg(state.results.filter(r=>r.categorie===c).map(r=>r.total)));
+  mkChart('chart-home-cat', {
+    type:'bar',
+    data:{ labels:cats, datasets:[{ label:'Total moyen', data:catAvg.map(v=>+v.toFixed(2)), backgroundColor:CHART_PALETTE[0]+'aa', borderColor:CHART_PALETTE[0], borderWidth:2 }] },
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ grid:{color:gridColor} } }, plugins:{ legend:{display:false} } }
+  });
+}
+
+/** Graphiques de la page groupe géographique */
+function _chartsGroupe(textColor, gridColor) {
+  if (!document.getElementById('chart-gr-dist')) return;
+  const g = state.currentGroupe;
+  const grData = state.results.filter(r =>
+    r.groupe === g &&
+    (!state.grFilterSaison || r.saison === state.grFilterSaison) &&
+    (!state.grFilterCat    || r.categorie === state.grFilterCat)
+  );
+  const scores = grData.map(r=>r.total).filter(v=>v>0).sort((a,b)=>a-b);
+  const buckets = Array.from({length:8},(_,i)=>({ from:i*10, count:0 }));
+  scores.forEach(v=>{ const b=Math.min(Math.floor(v/10),7); buckets[b].count++; });
+  mkChart('chart-gr-dist', {
+    type:'bar',
+    data:{ labels:buckets.map(b=>`${b.from}+`), datasets:[{ label:'Gymnastes', data:buckets.map(b=>b.count), backgroundColor:GROUPE_COLORS[g]+'aa', borderColor:GROUPE_COLORS[g], borderWidth:2 }] },
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{grid:{color:gridColor}} }, plugins:{legend:{display:false}} }
+  });
+  mkChart('chart-gr-radar', {
+    type:'radar',
+    data:{ labels:AGRES.map(a=>a.label), datasets:[{ label:g, data:AGRES.map(ag=>+avg(grData.map(r=>r.agres?.[ag.code]?.final||0)).toFixed(2)), borderColor:GROUPE_COLORS[g], backgroundColor:GROUPE_COLORS[g]+'33', pointBackgroundColor:GROUPE_COLORS[g] }] },
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ r:{ min:0, max:20, grid:{color:gridColor}, ticks:{backdropColor:'transparent'} } } }
+  });
+}
+
 function initCharts() {
+  // Nettoyer les instances dont le canvas a été supprimé par el.innerHTML
+  // (prévient les fuites mémoire après navigation)
+  _destroyOrphanCharts();
+
   const { textColor, gridColor } = chartDefaults();
+  // Mettre à jour la couleur Chart.js globale une seule fois par appel
   Chart.defaults.color = textColor;
 
-  // HOME charts
-  if (document.getElementById('chart-home-groupe')) {
-    const grLabels = Object.keys(GROUPES);
-    const grCounts = grLabels.map(g => state.results.filter(r=>r.groupe===g).length);
-    mkChart('chart-home-groupe', {
-      type:'doughnut',
-      data:{ labels:grLabels, datasets:[{ data:grCounts, backgroundColor: Object.values(GROUPE_COLORS), borderWidth:0 }] },
-      options:{ plugins:{ legend:{ position:'right' } }, cutout:'60%', responsive:true, maintainAspectRatio:false }
-    });
-    const cats = [...new Set(state.results.map(r=>r.categorie))];
-    const catAvg = cats.map(c => avg(state.results.filter(r=>r.categorie===c).map(r=>r.total)));
-    mkChart('chart-home-cat', {
-      type:'bar',
-      data:{ labels:cats, datasets:[{ label:'Total moyen', data:catAvg.map(v=>+v.toFixed(2)), backgroundColor:CHART_PALETTE[0]+'aa', borderColor:CHART_PALETTE[0], borderWidth:2 }] },
-      options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ grid:{color:gridColor} } }, plugins:{ legend:{display:false} } }
-    });
-  }
+  // Dispatcher : délègue à la fonction spécialisée selon le contenu du DOM
+  _chartsHome(textColor, gridColor);
 
   // GYMNASTE FICHE
   if (document.getElementById('chart-gymn-total')) {
@@ -6930,13 +7432,14 @@ function initCharts() {
     });
   }
 
+
+  // ANALYSES
   // ANALYSES
   if (document.getElementById('chart-ana-box')) {
-    const anaData = state.results.filter(r => {
-      if (state.anaFilterSaison && r.saison    !== state.anaFilterSaison) return false;
-      if (state.anaFilterCat    && r.categorie !== state.anaFilterCat)    return false;
-      if (state.anaFilterGroupe && r.groupe    !== state.anaFilterGroupe) return false;
-      return true;
+    const anaData = filterResultsBy({
+      saison: state.anaFilterSaison,
+      cat:    state.anaFilterCat,
+      groupe: state.anaFilterGroupe,
     });
     const grKeys   = Object.keys(GROUPES);
     const grColors = grKeys.map(g => GROUPE_COLORS[g]||'#888');
@@ -6948,7 +7451,7 @@ function initCharts() {
       data:{ labels:grKeys, datasets:[
         { label:'Min',  data:grKeys.map(g=>{ const vs=anaData.filter(r=>r.groupe===g).map(r=>r.total).filter(v=>v>0); return vs.length?+Math.min(...vs).toFixed(2):0; }), backgroundColor:CHART_PALETTE[2]+'55', borderColor:CHART_PALETTE[2], borderWidth:2 },
         { label:'Moy.', data:grKeys.map(g=>{ const vs=anaData.filter(r=>r.groupe===g).map(r=>r.total).filter(v=>v>0); return vs.length?+avg(vs).toFixed(2):0; }), backgroundColor:CHART_PALETTE[0]+'88', borderColor:CHART_PALETTE[0], borderWidth:2 },
-        { label:'Max',  data:grKeys.map(g=>{ const vs=anaData.filter(r=>r.groupe===g).map(r=>r.total).filter(v=>v>0); return vs.length?+Math.max(...vs).toFixed(2):0; }), backgroundColor:CHART_PALETTE[3]+'55', borderColor:CHART_PALETTE[3], borderWidth:2 }
+        { label:'Max',  data:grKeys.map(g=>{ const vs=anaData.filter(r=>r.groupe===g).map(r=>r.total).filter(v=>v>0); return vs.length?+max(vs).toFixed(2):0; }), backgroundColor:CHART_PALETTE[3]+'55', borderColor:CHART_PALETTE[3], borderWidth:2 }
       ]},
       options:{ responsive:true, maintainAspectRatio:false, plugins:{ tooltip:{ callbacks:{ label:ctx=>`${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}` } } }, scales:{ y:{grid:{color:gridColor}} } }
     });
@@ -7164,29 +7667,8 @@ function initCharts() {
     if (document.getElementById('chart-compare-radar')) initCompareChart();
   }
 
-  // GROUPE
-  if (document.getElementById('chart-gr-dist')) {
-    const g = state.currentGroupe;
-    const grData = state.results.filter(r =>
-      r.groupe === g &&
-      (!state.grFilterSaison || r.saison === state.grFilterSaison) &&
-      (!state.grFilterCat    || r.categorie === state.grFilterCat)
-    );
-    const scores = grData.map(r=>r.total).filter(v=>v>0).sort((a,b)=>a-b);
-    const buckets = Array.from({length:8},(_,i)=>({ from:i*10, count:0 }));
-    scores.forEach(v=>{ const b=Math.min(Math.floor(v/10),7); buckets[b].count++; });
-    mkChart('chart-gr-dist', {
-      type:'bar',
-      data:{ labels:buckets.map(b=>`${b.from}+`), datasets:[{ label:'Gymnastes', data:buckets.map(b=>b.count), backgroundColor:GROUPE_COLORS[g]+'aa', borderColor:GROUPE_COLORS[g], borderWidth:2 }] },
-      options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{grid:{color:gridColor}} }, plugins:{legend:{display:false}} }
-    });
-    mkChart('chart-gr-radar', {
-      type:'radar',
-      data:{ labels:AGRES.map(a=>a.label), datasets:[{ label:g, data:AGRES.map(ag=>+avg(grData.map(r=>r.agres?.[ag.code]?.final||0)).toFixed(2)), borderColor:GROUPE_COLORS[g], backgroundColor:GROUPE_COLORS[g]+'33', pointBackgroundColor:GROUPE_COLORS[g] }] },
-      options:{ responsive:true, maintainAspectRatio:false, scales:{ r:{ min:0, max:20, grid:{color:gridColor}, ticks:{backdropColor:'transparent'} } } }
-    });
-  }
 
+  _chartsGroupe(textColor, gridColor);
 
   // FICHE CLUB — appeler la bonne fonction selon l'onglet actif
   if (state.currentPage === 'club_fiche') {
@@ -7314,7 +7796,7 @@ function initClubCharts() {
     const gymns = uniqueGymnastes(catData);
     const top6  = gymns.map(g=>{
       const gr = catData.filter(r=>gymKey(r.nom,r.prenom)===gymKey(g.nom,g.prenom));
-      return { ...g, best:Math.max(...gr.map(r=>r.total)), nbComps:gr.length, data:gr };
+      return { ...g, best:max(gr.map(r=>r.total)), nbComps:gr.length, data:gr };
     }).sort((a,b)=>b.best-a.best).slice(0,6);
 
     const allDates = [...new Set(catData.map(r=>r.date))].sort();
@@ -7333,7 +7815,7 @@ function initClubCharts() {
     // Échelle Y intelligente : min/max calculés sur les valeurs réelles uniquement
     const allRealValues = datasets.flatMap(d=>d.data).filter(v=>v!=null && v>0);
     const realMin = allRealValues.length ? Math.min(...allRealValues) : 30;
-    const realMax = allRealValues.length ? Math.max(...allRealValues) : 50;
+    const realMax = allRealValues.length ? max(allRealValues) : 50;
     const smartMin = Math.max(30, Math.floor(realMin) - 3);
     const smartMax = Math.ceil(realMax) + 1;
 
@@ -7797,7 +8279,7 @@ function initClubPerfCharts() {
       ...(showMM ? [
         {
           label:'Meilleur',
-          data:allSais.map(s=>{ const vs=cr.filter(r=>r.saison===s).map(r=>r.total).filter(v=>v>0); return vs.length?+Math.max(...vs).toFixed(3):null; }),
+          data:allSais.map(s=>{ const vs=cr.filter(r=>r.saison===s).map(r=>r.total).filter(v=>v>0); return vs.length?+max(vs).toFixed(3):null; }),
           borderColor:CHART_PALETTE[2], backgroundColor:'transparent',
           tension:.3, pointRadius:4, borderDash:[5,3], borderWidth:1.5
         },
@@ -7827,7 +8309,7 @@ function initClubPerfCharts() {
   const allTotals = cr.map(r=>r.total).filter(v=>v>0).sort((a,b)=>a-b);
   const buckets   = Array.from({length:10},(_,i)=>({from:20+i*3, count:0, label:`${20+i*3}-${20+(i+1)*3}`}));
   allTotals.forEach(v=>{ const b=Math.min(Math.floor((v-20)/3),9); if(b>=0) buckets[b].count++; });
-  const maxCount = Math.max(...buckets.map(b=>b.count));
+  const maxCount = max(buckets.map(b=>b.count));
   mkChart('chart-club-perf-dist', {
     type:'bar',
     data:{ labels:buckets.map(b=>b.label), datasets:[{
@@ -7860,9 +8342,6 @@ function initClubPerfCharts() {
    TEMPS RÉEL — Supabase Realtime Subscriptions
    Quand un Admin importe, tous les connectés voient la màj
 ═══════════════════════════════════════════════════════════════ */
-
-
-
 
 
 /* ═══════════════════════════════════════════════════════════════
@@ -8061,7 +8540,7 @@ function showAbout() {
         </div>
         <div style="background:var(--c-surface2);border:1px solid var(--c-border);border-radius:10px;padding:14px 16px;text-align:center">
           <div style="font-size:10px;color:var(--c-text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">Date</div>
-          <div style="font-size:15px;font-weight:700;color:var(--c-text)">12 mai 2026</div>
+          <div style="font-size:15px;font-weight:700;color:var(--c-text)">13 mai 2026</div>
         </div>
       </div>
 
@@ -8073,7 +8552,363 @@ function showAbout() {
 
         ${[
           {
-            ver: '1.0.2', date: '12 mai 2026', current: true,
+            ver: '1.6.5', date: '14 mai 2026', current: true,
+            items: [
+              'Amélioration visuelle du bouton "Renvoyer l\'email de confirmation" (bleu clair, plus visible)',
+              'Message d\'erreur clarifié quand un email est déjà enregistré',
+              'Nettoyage automatique du feedback de renvoi d\'email à chaque nouvel affichage de l\'écran de succès',
+              'Passage en version v1.6.5',
+            ]
+          },
+          {
+            ver: '1.6.4', date: '14 mai 2026', current: false,
+            items: [
+              'Documentation ajoutée dans le code pour configurer un SMTP personnalisé (Resend recommandé, gratuit jusqu\'à 3 000 emails/mois)',
+              'Guide étape par étape : création compte Resend, configuration dans Supabase Dashboard, Redirect URLs',
+              'Avertissement visible dans l\'écran d\'inscription sur les limites d\'envoi d\'emails',
+              'Passage en version v1.6.4',
+            ]
+          },
+          {
+            ver: '1.6.3', date: '14 mai 2026', current: false,
+            items: [
+              'Ajout du bouton "Renvoyer l\'email de confirmation" sur l\'écran de succès d\'inscription',
+              'Nouvelle fonction resendConfirmationEmail() avec gestion rate limit, email déjà confirmé, réactivation 60s',
+              'Message enrichi quand le compte existe déjà mais n\'est pas confirmé',
+              'Passage en version v1.6.3',
+            ]
+          },
+          {
+            ver: '1.6.2', date: '14 mai 2026', current: false,
+            items: [
+              'Amélioration du message d\'erreur lors du dépassement de la limite d\'envoi d\'emails (rate limit)',
+              'Meilleure expérience utilisateur en cas de "email rate limit exceeded"',
+              'Passage en version v1.6.2',
+            ]
+          },
+          {
+            ver: '1.6.1', date: '14 mai 2026', current: false,
+            items: [
+              'Correction du lien de confirmation email : ajout de emailRedirectTo: window.location.origin dans signUp()',
+              'La redirection fonctionne désormais correctement en production (ufolep-gaf.fr) et en local',
+              'Passage en version v1.6.1',
+            ]
+          },
+          {
+            ver: '1.6.0', date: '14 mai 2026', current: false,
+            items: [
+              'Ajout de l\'inscription autonome des utilisateurs via Supabase',
+              'Nouvel écran d\'inscription (Email + Mot de passe + Confirmation) avec le même design que l\'écran de login',
+              'Écran de confirmation post-inscription indiquant l\'envoi de l\'email de validation',
+              'Les nouveaux comptes reçoivent automatiquement le rôle lecteur (via options.data transmis au trigger Supabase)',
+              'Lien "Créer un compte" ajouté sur l\'écran de connexion',
+              'Gestion des erreurs : email déjà utilisé, mot de passe trop faible, confirmation incorrecte',
+              'Passage en version v1.6.0',
+            ]
+          },
+          {
+            ver: '1.5.10', date: '13 mai 2026', current: false,
+            items: [
+              'Nettoyage final de la sidebar : updateSidebarUser() réécrite avec structure claire par section et valeur par défaut flex',
+              'Suppression du code résiduel des correctifs d\'alignement (listener _bound, code mort)',
+              'HTML sidebar reformaté : icône et label sur lignes séparées pour lisibilité',
+              'CSS nettoyé : règle vide .nav-item-danger {} supprimée, commentaires clarifiés',
+              'Passage en version v1.5.10',
+            ]
+          },
+          {
+            ver: '1.5.9', date: '13 mai 2026', current: false,
+            items: [
+              'Correction définitive des 3 boutons sidebar : display:block → display:flex dans updateSidebarUser() — le layout flex était écrasé au moment de l\'affichage',
+              'Uniformisation de la structure HTML de tous les nav-item',
+              'Passage en version v1.5.9',
+            ]
+          },
+          {
+            ver: '1.5.8', date: '13 mai 2026', current: false,
+            items: [
+              'Correction définitive alignement sidebar : remplacement des caractères Unicode sans police (⟳ ⬆ ✕) par des emojis natifs confirmés (🔃 📤 🗑) qui ne forcent jamais un retour à la ligne',
+              'Uniformisation de la structure HTML de tous les .nav-item avec .nav-label',
+              'Passage en version v1.5.8',
+            ]
+          },
+          {
+            ver: '1.5.7', date: '13 mai 2026', current: false,
+            items: [
+              'Correction de l\'alignement des boutons Recharger, Sauvegarder vers Supabase et Supprimer toutes les données',
+              'Uniformisation stricte de la structure et du CSS des .nav-item (display:flex + align-items:center + gap:11px)',
+              'Passage en version v1.5.7',
+            ]
+          },
+          {
+            ver: '1.5.6', date: '13 mai 2026', current: false,
+            items: [
+              'Correction définitive alignement sidebar : remplacement des émojis fullwidth (🔄 💾 🗑️) par des SVG inline 16×16px garantis dans leur boîte',
+              'Passage en version v1.5.6',
+            ]
+          },
+          {
+            ver: '1.5.5', date: '13 mai 2026', current: false,
+            items: [
+              'Correction alignement sidebar : boutons cachés (btn-save-supabase, btn-clear-data) mis en position:absolute pour ne pas affecter le layout flex des nav-item',
+              'Passage en version v1.5.5',
+            ]
+          },
+          {
+            ver: '1.5.4', date: '13 mai 2026', current: false,
+            items: [
+              'Correction alignement sidebar : max-width + overflow:hidden sur .nav-icon pour clamper les émojis double-largeur',
+              'Remplacement de ☁️ par ☁ (sans variation selector Unicode) pour éviter le décalage',
+              'Passage en version v1.5.4',
+            ]
+          },
+          {
+            ver: '1.5.3', date: '13 mai 2026', current: false,
+            items: [
+              'Alignement harmonieux de la sidebar : colonne icône fixe (22px), texte dans span.nav-label avec text-overflow ellipsis',
+              'Sidebar élargie à 260px pour éviter les retours à la ligne sur les labels longs',
+              'Hauteur uniforme min-height:38px sur tous les nav-item',
+              'Émojis icônes alignés via inline-flex (plus de décalage vertical)',
+              'Passage en version v1.5.3',
+            ]
+          },
+          {
+            ver: '1.5.2', date: '13 mai 2026', current: false,
+            items: [
+              'Harmonisation visuelle : tous les boutons de la section Administration utilisent le même style nav-item que la navigation standard',
+              'Bouton "Supprimer toutes les données" : style neutre par défaut, rouge discret au hover uniquement',
+              'Bouton "Recharger les données" : léger accent vert au hover pour le distinguer comme action de synchronisation',
+              'Meilleur alignement des items Par Groupe : padding cohérent avec la navigation standard',
+              'Passage en version v1.5.2',
+            ]
+          },
+          {
+            ver: '1.5.1', date: '13 mai 2026', current: false,
+            items: [
+              'Réorganisation complète de la sidebar en 3 niveaux selon les rôles (Navigation / Analyses / Administration)',
+              'Déplacement du bouton Importer dans la section Administration (disparaît de la topbar)',
+              'Renommage : Classements Équipes → Classements par Équipes, Classements Agrès → Classements par Agrès, Synchroniser → Recharger les données',
+              'Section Analyses (Globales, Détaillées, Club) masquée pour les lecteurs',
+              'Section Administration et boutons SQLite visibles uniquement pour les admins',
+              'Bouton Recharger les données visible par tous en mode Supabase',
+              'Passage en version v1.5.1',
+            ]
+          },
+          {
+            ver: '1.5.0', date: '13 mai 2026', current: false,
+            items: [
+              'Nettoyage complet et définitif du code mort lié à l\'ancienne virtualisation des tableaux',
+              'Suppression de toutes les fonctions, variables, classes CSS et commentaires résiduels de virtualisation',
+              'Stabilisation du rendu des listes (pagination + mémoïsation)',
+              'Amélioration de la maintenabilité et de la robustesse globale du code',
+              'Version de référence après la phase de nettoyage et d\'optimisation',
+            ]
+          },
+          {
+            ver: '1.4.10', date: '13 mai 2026', current: false,
+            items: [
+              'Nettoyage complet et agressif du code mort lié à la virtualisation : fonctions, variables, classes CSS et commentaires résiduels supprimés',
+              'Rendu des tableaux classique et robuste : pagination + memoïsation, tbody direct',
+              'Amélioration significative de la propreté et de la maintenabilité du code',
+              'Passage en version v1.4.10',
+            ]
+          },
+          {
+            ver: '1.4.9', date: '13 mai 2026', current: false,
+            items: [
+              'Nettoyage initial du code mort de la virtualisation',
+              'Passage en version v1.4.9',
+            ]
+          },
+          {
+            ver: '1.4.8', date: '13 mai 2026', current: false,
+            items: [
+              'Suppression complète du système de virtualisation des tableaux — remplacé par le rendu standard (tbody direct)',
+              'Les tableaux Gymnastes, Clubs, Competitions et Classements s\'affichent correctement',
+              'Passage en version v1.4.8',
+            ]
+          },
+          {
+            ver: '1.4.7', date: '13 mai 2026', current: false,
+            items: [
+              'Correction fondamentale de la virtualisation : les tableaux sont montés dans bindPageEvents() et non plus via requestAnimationFrame, garantissant que les containers existent dans le DOM au moment du mount',
+              'Suppression de tous les requestAnimationFrame dans les renderers de liste — remplacés par _pendingVirtTables.push()',
+              'Les tableaux Gymnastes, Clubs, Competitions et Classements s\'affichent maintenant correctement',
+              'Passage en version v1.4.7',
+            ]
+          },
+          {
+            ver: '1.4.6', date: '13 mai 2026', current: false,
+            items: [
+              'Correction critique de la virtualisation : suppression des .join("") dans les 5 renderers de listes (renderCompetitions, renderClubsListe, renderGymnastesListe, renderGymnastes, renderEquipes) — rows est maintenant un Array, _virtRender peut faire rows.slice().join("") correctement',
+              'Les tableaux s\'affichent maintenant correctement sur toutes les pages',
+              'Passage en version v1.4.6',
+            ]
+          },
+          {
+            ver: '1.4.5', date: '13 mai 2026', current: false,
+            items: [
+              'Correction critique : tableaux vides sur les pages Gymnastes, Clubs, Compétitions et Classements — rows.map().join supprimé, rows est maintenant un Array compatible mountVirtualTable',
+              'Passage en version v1.4.5',
+            ]
+          },
+          {
+            ver: '1.4.4', date: '13 mai 2026', current: false,
+            items: [
+              'Remplacement du listener window.resize global par ResizeObserver par tableau — seul le tableau concerné est recalculé lors du redimensionnement',
+              'Nettoyage automatique des ResizeObservers au changement de page (via _virtCleanupAll)',
+              'Passage en version v1.4.4',
+            ]
+          },
+          {
+            ver: '1.4.3', date: '13 mai 2026', current: false,
+            items: [
+              'Nombre de lignes visibles calculé via getBoundingClientRect().height (hauteur réelle post-layout, plus précis que clientHeight)',
+              'Recalcul automatique au redimensionnement de fenêtre : _virtResizeAll() avec debounce 150 ms',
+              'Passage en version v1.4.3',
+            ]
+          },
+          {
+            ver: '1.4.2', date: '13 mai 2026', current: false,
+            items: [
+              'Virtualisation avec spacers dynamiques : hauteur du container calculée depuis clientHeight (100vh - topbar - marges), plus aucune hauteur fixe',
+              'Nombre de lignes visibles adaptatif : entre 40 et 90 selon la hauteur disponible (_virtWindowSize)',
+              'Nettoyage propre des listeners scroll : _virtCleanupAll() appelé à chaque renderPage, _virtCleanup() sur chaque remount',
+              'Pagination conservée intacte sur toutes les pages virtualisées',
+              'Passage en version v1.4.2',
+            ]
+          },
+          {
+            ver: '1.4.1', date: '13 mai 2026', current: false,
+            items: [
+              'Vraie virtualisation des tableaux avec row pooling + spacers haut/bas : seules ~70 lignes sont dans le DOM, les spacers simulent la hauteur totale',
+              'Pagination conservée sur toutes les pages virtualisées (goPage, goCompPage, goGymnListePage, goClubsListePage)',
+              'Scroll interne fluide (-webkit-overflow-scrolling:touch) avec thead sticky',
+              'Listener scroll throttlé via requestAnimationFrame (passive:true pour ne pas bloquer le scroll natif)',
+              'Passage en version v1.4.1',
+            ]
+          },
+          {
+            ver: '1.4.0', date: '13 mai 2026', current: false,
+            items: [
+              'Virtualisation des tableaux principaux via mountVirtualTable() : Gymnastes, Liste Gymnastes, Clubs, Compétitions, Équipes — rendu différé par chunks (requestIdleCallback) avec thead sticky',
+              'Lazy loading des graphiques : IntersectionObserver avec debounce 80ms — les charts hors viewport ne sont pas dessinés, gain majeur sur Analyses (10+ graphiques)',
+              'Debounce de recherche adaptatif : 180ms sur mobile (touch), 220ms desktop',
+              'Cache de hash de graphiques (_chartDataSignatures) documenté et optimisé',
+              'Passage en version v1.4.0',
+            ]
+          },
+          {
+            ver: '1.3.2', date: '13 mai 2026', current: false,
+            items: [
+              '_chartDataHash() optimisée : concaténation plate avec séparateurs au lieu de JSON.stringify — plus rapide (O(n) sans allocation arbre JSON) et déterministe',
+              'Documentation des limites du hash : couleurs/thème exclus intentionnellement (gérés par toggleTheme), type de graphique géré par mkChart()',
+              'Passage en version v1.3.2 — Phase 3 terminée',
+            ]
+          },
+          {
+            ver: '1.3.1', date: '13 mai 2026', current: false,
+            items: [
+              '_chartDataHash() étendue : encode données + labels axe X + labels légende — un changement de labels sans changement de valeurs déclenche un update()',
+              'Commentaire explicite sur ce qui est exclu de la signature (couleurs/thème gérés par toggleTheme)',
+              'Passage en version v1.3.1',
+            ]
+          },
+          {
+            ver: '1.3.0', date: '13 mai 2026', current: false,
+            items: [
+              'mkChart() : signature légère des données (_chartDataHash) — skip du update() si les données sont identiques, pas seulement si le canvas est le même',
+              '_destroyOrphanCharts() : nettoyage des instances Chart.js dont le canvas a été supprimé par navigation, appelé en début de initCharts()',
+              'Registre _chartDataSignatures : mémoïse la dernière signature par canvas pour éviter les recalculs',
+              '_chartDataSig() complétée : compareFilterGroupe et compareFilterClub ajoutés',
+              'Passage en version v1.3.0',
+            ]
+          },
+          {
+            ver: '1.2.3', date: '13 mai 2026', current: false,
+            items: [
+              '_buildRenderKey() découpée en 5 helpers ciblés : _keyPage(), _keyMainFilters(), _keyListFilters(), _keyClubFiche(), _keyAnalyses(), _keyPagination()',
+              'Bloc de documentation allégé — seuls les points essentiels conservés',
+              'Passage en version v1.2.3',
+            ]
+          },
+          {
+            ver: '1.2.2', date: '13 mai 2026', current: false,
+            items: [
+              'Lisibilité : bloc de documentation complet sur la stratégie de rendu (render key, memoïsation, skip graphiques)',
+              '_buildRenderKey() restructurée par sections commentées (contexte, filtres, pagination…)',
+              '_chartDataSig() : commentaires expliquant pourquoi chaque état est inclus',
+              'renderPage() : flux documenté en 6 étapes numérotées',
+              'Aucun changement de comportement — amélioration de lisibilité uniquement',
+              'Passage en version v1.2.2',
+            ]
+          },
+          {
+            ver: '1.2.1', date: '13 mai 2026', current: false,
+            items: [
+              'Simplification du système de rendu : suppression de _applyPartialUpdate(), PARTIAL_UPDATE_PAGES et _renderKeyBase()',
+              'Rendu robuste : skip total sur clé identique + skip graphiques sur signature identique',
+              'renderPage() simplifié — ~40 lignes, sans mise à jour partielle DOM complexe',
+              'Meilleure maintenabilité : une seule logique de rendu, sans duplication de templates',
+              'Passage en version v1.2.1',
+            ]
+          },
+          {
+            ver: '1.2.0', date: '13 mai 2026', current: false,
+            items: [
+              'Rendu intelligent : skip total si rien n\'a changé (_buildRenderKey), mise à jour partielle DOM sur changement de page de pagination (tbody + pagination uniquement)',
+              'Skip initCharts() si la signature des données est identique au render précédent (_chartDataSig)',
+              'PARTIAL_UPDATE_PAGES : pagination sur Gymnastes, Gymnastes Liste, Clubs, Compétitions sans reconstruction du HTML',
+              '_applyPartialUpdate() : mise à jour chirurgicale du tbody et de la pagination via DOM direct',
+              '_cache.invalidate() invalide désormais aussi les clés de render',
+              'navigate() force un render complet à chaque navigation',
+              'Passage en version v1.2.0',
+            ]
+          },
+          {
+            ver: '1.1.2', date: '13 mai 2026', current: false,
+            items: [
+              'Mémoïsation du filtrage et du tri : getFilteredAndSorted(), getGymnastesListe(), getClubsListe(), getFilteredAndSortedComps(), filterResultsBy() — toutes mémoïsées dans _cache',
+              'Pagination sans recalcul : changer de page ne retrie plus les données',
+              'getGymnastesListe() et getClubsListe() : construction O(n) évitée à chaque render',
+              'Passage en version v1.1.2',
+            ]
+          },
+          {
+            ver: '1.1.1', date: '13 mai 2026', current: false,
+            items: [
+              'Correction critique : graphiques vides après navigation — mkChart réutilisait une instance Chart.js orpheline après que el.innerHTML ait recréé le canvas DOM',
+              'Passage en version v1.1.1',
+            ]
+          },
+          {
+            ver: '1.1.0', date: '13 mai 2026', current: false,
+            items: [
+              'Refonte de renderPage : table de routage, annulation rAF redondant, titre extrait',
+              'Utilitaires réutilisables : makeSortHeader(), sortData(), paginateData(), _makeSortFn()',
+              '6 fonctions de tri réduites à une factory + constantes nommées',
+              'Helpers th() inlines (×4) remplacés par makeSortHeader() générique',
+              'init() décomposé en _initNavEvents(), _initTopbarEvents(), _initModalEvents(), _initClearDataEvent()',
+              'initCharts() allégé : _chartsHome() et _chartsGroupe() extraits',
+              'Cache _cache amélioré : méthode del(), versionnage optimisé',
+              'Pagination remplacée par paginateData() dans les listes gymnaste et club',
+              'GLOBAL_PAGES et PAGE_RENDERERS : constantes Set/objet réduisant la complexité de renderPage',
+              'Passage en version v1.1.0',
+            ]
+          },
+          {
+            ver: '1.0.3', date: '13 mai 2026', current: false,
+            items: [
+              'Suppression des fonctions dupliquées (recordImport, recoverAllPartitions, fetchAndLoadFlipsalto)',
+              'Optimisation des graphiques Chart.js : mise à jour des données sans recréation',
+              'Amélioration du debounce (méthode cancel + délai réduit à 300 ms)',
+              'Correction du double _cache.get imbriqué dans renderCompetitions',
+              'Nettoyage des console.log de debug inutiles',
+              'Passage en version v1.0.3',
+            ]
+          },
+          {
+            ver: '1.0.2', date: '12 mai 2026', current: false,
             items: [
               'Amélioration de la modal "À propos" avec changelog détaillé',
               'Affichage dynamique de la version dans la sidebar',
@@ -8367,7 +9202,7 @@ function initCompareChart() {
 
   // Max dynamique pour le radar : arrondi au dessus du max observé
   const allVals = datasets.flatMap(d=>d.data).filter(v=>v>0);
-  const dynMax  = allVals.length ? Math.ceil(Math.max(...allVals) / 2) * 2 + 2 : 20;
+  const dynMax  = allVals.length ? Math.ceil(max(allVals) / 2) * 2 + 2 : 20;
 
   mkChart('chart-compare-radar', {
     type:'radar',
@@ -8427,7 +9262,7 @@ function bindPageEvents() {
         if (target === 'cf-performance') initClubPerfCharts();
         else if (target === 'cf-effectifs') initClubFicheCharts();
       } else {
-        // Graphiques chargés seulement quand le panneau est visible
+        // Graphiques chargés seulement quand le panneau devient visible
         requestAnimationFrame(() => initCharts());
       }
     });
@@ -8435,6 +9270,9 @@ function bindPageEvents() {
 
   // ── Recherche avec debounce ───────────────────────────────
   // Clone pour retirer les anciens listeners, puis rebinder avec debounce
+  // Installer l'observer lazy pour les graphiques (après que le DOM soit prêt)
+  _installChartObserver();
+
   document.querySelectorAll('input[type="search"]').forEach(inp => {
     const fresh = inp.cloneNode(true);
     inp.parentNode.replaceChild(fresh, inp);
@@ -8483,49 +9321,35 @@ function bindPageEvents() {
             try { refocused.setSelectionRange(selStart, selEnd); } catch(e){}
           }
         });
-      }, 280);
+      // 180ms sur mobile (touch), 220ms sinon — plus réactif qu'avant (280ms)
+      }, ('ontouchstart' in window) ? 180 : 220);
     });
   });
 }
 
 /* =========================================================
-   SORT
+   SORT & PAGINATION — fonctions exposées aux onclick inline
+   Générées via _makeSortFn() pour éviter la duplication.
 ========================================================= */
-function setSortAndRender(col) {
-  if (state.sortCol===col) state.sortDir = state.sortDir==='asc'?'desc':'asc';
-  else { state.sortCol=col; state.sortDir='desc'; }
-  renderPage();
-}
-function setClubSort(col) {
-  if (state.clubSortCol===col) state.clubSortDir = state.clubSortDir==='asc'?'desc':'asc';
-  else { state.clubSortCol=col; state.clubSortDir='desc'; }
-  renderPage();
-}
-function goCompPage(p) { state.compPage = p; renderPage(); }
-function goGymnListePage(p) { state.gymnListePage = p; renderPage(); }
-function goClubsListePage(p) { state.clubListePage = p; renderPage(); }
-function setClubsListeSort(col) {
-  if (state.clubListeSortCol === col) state.clubListeSortDir = state.clubListeSortDir==='asc'?'desc':'asc';
-  else { state.clubListeSortCol = col; state.clubListeSortDir = col==='nom'?'asc':'desc'; }
-  state.clubListePage = 1; renderPage();
-}
-function setGymnListeSort(col) {
-  if (state.gymnListeSortCol === col) state.gymnListeSortDir = state.gymnListeSortDir==='asc'?'desc':'asc';
-  else { state.gymnListeSortCol = col; state.gymnListeSortDir = col==='nom'?'asc':'desc'; }
-  state.gymnListePage = 1; renderPage();
-}
-function setCompSort(col) {
-  if (state.compSortCol===col) state.compSortDir = state.compSortDir==='asc'?'desc':'asc';
-  else { state.compSortCol=col; state.compSortDir='desc'; }
-  renderPage();
-}
-function setGymnCompSort(col) {
-  if (state.gymnCompSortCol===col) state.gymnCompSortDir = state.gymnCompSortDir==='asc'?'desc':'asc';
-  else { state.gymnCompSortCol=col; state.gymnCompSortDir='desc'; }
-  renderPage();
-}
-function changePage(d) { state.tablePage += d; renderPage(); }
-function goPage(p) { state.tablePage = p; renderPage(); }
+// Tri générique gymnastes/résultats (page classements)
+const setSortAndRender  = _makeSortFn('sortCol',         'sortDir');
+// Tri équipes (page Équipes/Clubs)
+const setClubSort       = _makeSortFn('clubSortCol',     'clubSortDir');
+// Tri page Compétitions
+const setCompSort       = _makeSortFn('compSortCol',     'compSortDir',     'compPage');
+// Tri liste Gymnastes
+const setGymnListeSort  = _makeSortFn('gymnListeSortCol','gymnListeSortDir','gymnListePage', 'desc');
+// Tri liste Clubs
+const setClubsListeSort = _makeSortFn('clubListeSortCol','clubListeSortDir','clubListePage', 'asc');
+// Tri tableau compétitions d'une gymnaste (fiche gymnaste)
+const setGymnCompSort   = _makeSortFn('gymnCompSortCol', 'gymnCompSortDir');
+
+// Pagination
+function goCompPage(p)      { state.compPage      = p; renderPage(); }
+function goGymnListePage(p) { state.gymnListePage  = p; renderPage(); }
+function goClubsListePage(p){ state.clubListePage  = p; renderPage(); }
+function changePage(d)      { state.tablePage += d; renderPage(); }
+function goPage(p)          { state.tablePage = p;  renderPage(); }
 function clearFilters() {
   state.filterSaison = state.filterComp = state.filterGroupe =
   state.filterCat = state.filterClub = state.filterSearch = '';
@@ -8927,6 +9751,9 @@ async function importMultipleUrls() {
 /* =========================================================
    EXPORT
 ========================================================= */
+/* =========================================================
+   EXPORTS (CSV, JSON, Backup)
+========================================================= */
 function exportCSV() {
   ensureAllSaisonsLoaded();
   const data = getFilteredResults();
@@ -9007,6 +9834,9 @@ function dlFile(name, content, type) {
 /* =========================================================
    TOAST
 ========================================================= */
+/* =========================================================
+   UTILITAIRES UI (toast, modal, pagination, tri)
+========================================================= */
 function toast(msg, type='') {
   const el = document.createElement('div');
   el.className = `toast ${type}`;
@@ -9031,43 +9861,64 @@ function toggleTheme() {
 /* =========================================================
    BOOTSTRAP
 ========================================================= */
-async function init() {
-  // Theme
-  const savedTheme = localStorage.getItem('ufolep_theme') || 'light';
-  document.documentElement.setAttribute('data-theme', savedTheme);
-  document.getElementById('theme-toggle').textContent = savedTheme==='dark' ? '☀️ Mode clair' : '🌙 Mode sombre';
+/* ─── Sous-fonctions d'initialisation ───────────────────── */
 
-  // Load data (SQLite — async)
-  await loadData();
-
-  // Nav events
+/** Initialise les événements de navigation (sidebar) */
+function _initNavEvents() {
   document.querySelectorAll('.nav-item[data-page]').forEach(el => {
     el.addEventListener('click', () => navigate(el.dataset.page, { groupe: el.dataset.groupe }));
   });
+}
 
-  // Topbar buttons
-  document.getElementById('btn-import').addEventListener('click', openModal);
-  document.getElementById('btn-export-csv').addEventListener('click', exportCSV);
-  document.getElementById('btn-export-json').addEventListener('click', exportJSON);
+/** Initialise les événements topbar + thème */
+function _initTopbarEvents() {
+  document.getElementById('btn-import')?.addEventListener('click', openModal);
+  document.getElementById('btn-export-csv')?.addEventListener('click', exportCSV);
+  document.getElementById('btn-export-json')?.addEventListener('click', exportJSON);
+  document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
+  document.getElementById('btn-url-preview')?.addEventListener('click', previewFlipsaltoUrl);
+}
 
-  // Theme toggle
-  document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+/** Initialise les événements de la modale d'import */
+function _initModalEvents() {
+  document.getElementById('modal-close')?.addEventListener('click', closeModal);
+  document.getElementById('modal-cancel')?.addEventListener('click', closeModal);
+  document.getElementById('modal-import')?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+  document.getElementById('btn-do-import')?.addEventListener('click', doImport);
 
-  // Clear data — Admin uniquement, smart selon le mode
-  document.getElementById('btn-clear-data').addEventListener('click', async () => {
+  // Onglets de la modale
+  document.querySelectorAll('#modal-import .tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#modal-import .tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('#modal-import .tab-panel').forEach(p => {
+        p.classList.toggle('active', p.id === btn.dataset.tab);
+      });
+    });
+  });
+
+  // Données démo
+  document.getElementById('btn-load-demo')?.addEventListener('click', () => {
+    state.results = generateDemoData();
+    deriveCompetitions(); saveData();
+    toast(`Données démo chargées : ${state.results.length} résultats sur ${state.competitions.length} compétitions !`, 'success');
+    closeModal();
+    navigate('home');
+  });
+}
+
+/** Initialise le bouton de suppression des données (admin) */
+function _initClearDataEvent() {
+  document.getElementById('btn-clear-data')?.addEventListener('click', async () => {
     const modeLabel = _supaMode ? 'Supabase (DISTANT)' : 'SQLite local';
-
-    // Double confirmation
     if (!confirm(`⚠️ Suppression ${modeLabel}\n\nÊtes-vous sûr de vouloir supprimer TOUTES les données ?`)) return;
     const typed = prompt(
       `Cette action est IRRÉVERSIBLE et supprimera toutes les données ${modeLabel}.\n\nTapez "SUPPRIMER" pour confirmer :`
     );
-    if (typed !== 'SUPPRIMER') {
-      toast('Suppression annulée.', 'info');
-      return;
-    }
+    if (typed !== 'SUPPRIMER') { toast('Suppression annulée.', 'info'); return; }
 
-    // Suppression Supabase
     if (_supaMode && _supabase) {
       try {
         toast('Suppression en cours sur Supabase…', 'info');
@@ -9075,18 +9926,13 @@ async function init() {
         await _supabase.from('equipes').delete().neq('id', 0);
         await _supabase.from('history').delete().neq('id', 0);
         toast('Données Supabase supprimées.', 'success');
-      } catch(e) {
-        toast('Erreur suppression Supabase : ' + e.message, 'error');
-        return;
-      }
+      } catch(e) { toast('Erreur suppression Supabase : ' + e.message, 'error'); return; }
     }
 
-    // Réinitialiser le state en RAM
     state.results = []; state.teamResults = []; state.competitions = [];
     state.compareList = []; state.importHistory = [];
     _loadedSaisons.clear(); _knownSaisons = []; _dirtySaisons.clear();
 
-    // Supprimer SQLite local
     if (_db) {
       try {
         _db.run('DELETE FROM resultats');
@@ -9106,64 +9952,28 @@ async function init() {
     toast('Toutes les données ont été supprimées.', 'success');
     navigate('home');
   });
-
-  // Modal
-  document.getElementById('modal-close').addEventListener('click', closeModal);
-  document.getElementById('modal-cancel').addEventListener('click', closeModal);
-  document.getElementById('modal-import').addEventListener('click', e => {
-    if (e.target === e.currentTarget) closeModal();
-  });
-  document.getElementById('btn-do-import').addEventListener('click', doImport);
-
-  // Modal tabs
-  document.querySelectorAll('#modal-import .tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#modal-import .tab-btn').forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
-      document.querySelectorAll('#modal-import .tab-panel').forEach(p => {
-        p.classList.toggle('active', p.id===btn.dataset.tab);
-      });
-    });
-  });
-
-  // Demo data
-  document.getElementById('btn-load-demo').addEventListener('click', () => {
-    state.results = generateDemoData();
-    deriveCompetitions(); saveData();
-    toast(`Données démo chargées : ${state.results.length} résultats sur ${state.competitions.length} compétitions !`, 'success');
-    closeModal();
-    navigate('home');
-  });
-
-  // URL preview button
-  document.getElementById('btn-url-preview').addEventListener('click', previewFlipsaltoUrl);
-
-  // Initial render
-  updateStorageIndicator();
-  navigate('home');
 }
 
-/* =========================================================
-   FETCH + LOAD FLIPSALTO (utilisé au démarrage et à l'import URL)
-========================================================= */
-async function fetchAndLoadFlipsalto(url, groupe, saison) {
-  try {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const json = await resp.json();
-    const parsed = parseFlipsaltoAPI(json, groupe, saison);
-    if (!parsed.length) return;
-    const compId = parsed[0]?.compId;
-    if (compId) deleteCompId(compId);
-    pushResults(parsed, []);
-    deriveCompetitions();
-    saveData();
-    renderPage(); // refresh UI with real data
-    toast(`✅ ${parsed.length} gymnastes chargés — ${json.title}`, 'success');
-  } catch(e) {
-    // Silently fail on first load (user may be offline); show message only if visible
-    console.warn('Flipsalto auto-load failed:', e.message);
-  }
+/* ─── Point d'entrée principal ──────────────────────────── */
+async function init() {
+  // Thème
+  const savedTheme = localStorage.getItem('ufolep_theme') || 'light';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  const themeBtn = document.getElementById('theme-toggle');
+  if (themeBtn) themeBtn.textContent = savedTheme === 'dark' ? '☀️ Mode clair' : '🌙 Mode sombre';
+
+  // Chargement des données (SQLite — async)
+  await loadData();
+
+  // Initialisation des événements par domaine
+  _initNavEvents();
+  _initTopbarEvents();
+  _initModalEvents();
+  _initClearDataEvent();
+
+  // Rendu initial
+  updateStorageIndicator();
+  navigate('home');
 }
 
 /* ================================================================
@@ -9242,7 +10052,6 @@ function initMobileMenu() {
     if (e.key === 'Escape' && sidebar.classList.contains('open')) closeMobileMenu();
   });
 
-  console.log('[MobileMenu] Initialisé ✅');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -9318,7 +10127,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.6.5';
 
 // Mettre à jour l'affichage de la version dès que le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
@@ -9327,7 +10136,42 @@ document.addEventListener('DOMContentLoaded', () => {
 }, { once: true });
 
 // Affichage console au chargement
-console.log(`%c[UFOLEP GAF] Version ${APP_VERSION} - ${new Date().toISOString().slice(0,10)}`, 'color:#666; font-size:10px');
+// Version logged at startup — see APP_VERSION constant above
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CONFIGURATION SMTP PERSONNALISÉ  (fortement recommandé en production)
+   ═══════════════════════════════════════════════════════════════════════
+
+   Par défaut, Supabase limite l'envoi d'emails de confirmation à ~2/heure.
+   Pour lever cette limite, configurez un serveur SMTP externe.
+
+   ── Solution recommandée : Resend (gratuit jusqu'à 3 000 emails/mois) ──
+
+   1. Créer un compte sur https://resend.com
+   2. Ajouter et vérifier votre domaine (ex: ufolep-gaf.fr)
+   3. Créer une clé API dans Resend (section "API Keys")
+   4. Dans Supabase Dashboard → Authentication → Email → SMTP Settings :
+        ☑ Activer "Enable Custom SMTP"
+        Host     : smtp.resend.com
+        Port     : 465  (SSL) ou 587 (TLS)
+        Username : resend
+        Password : re_xxxxxxxxxxxxxxxxxxxx  ← votre clé API Resend
+        Sender   : noreply@ufolep-gaf.fr
+   5. Enregistrer — tester avec "Send test email" dans le dashboard
+   6. Dans Authentication → URL Configuration → Redirect URLs :
+        Ajouter : https://ufolep-gaf.fr
+        Ajouter : http://localhost:*  (pour les tests locaux)
+
+   ── Avantages ─────────────────────────────────────────────────────────
+   ✓ Plus de limite 2 emails/heure
+   ✓ Emails envoyés depuis votre propre domaine (meilleure délivrabilité)
+   ✓ Dashboard Resend pour suivre les envois et détecter les bounces
+
+   ── Autres fournisseurs compatibles ───────────────────────────────────
+   • SendGrid  : smtp.sendgrid.net  port 587  user=apikey
+   • Postmark  : smtp.postmarkapp.com  port 587
+   • Brevo     : smtp-relay.brevo.com  port 587
+   ═══════════════════════════════════════════════════════════════════════ */
 
 const SUPABASE_URL      = 'https://ctqiimnsrbnhrxvnlcmf.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0cWlpbW5zcmJuaHJ4dm5sY21mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NzIxMDUsImV4cCI6MjA5NDE0ODEwNX0.4WIOQO9vkcjT8VmCJ7E19PcZRtsGC471TaKt4vLrhMo';
@@ -9393,6 +10237,145 @@ async function doLogin() {
               : e.message?.includes('Email not confirmed') ? 'Email non confirmé. Vérifiez votre boîte mail.'
               : e.message || 'Erreur de connexion.';
     showLoginError(msg);
+  }
+}
+
+// ── Navigation entre écrans auth ────────────────────────────────────────
+
+function showRegisterScreen() {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('register-success-screen').classList.remove('visible');
+  // Vider les champs à chaque ouverture
+  ['register-email','register-password','register-password2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const err = document.getElementById('register-error');
+  if (err) err.classList.remove('show');
+  document.getElementById('register-screen').classList.add('visible');
+}
+
+function showLoginScreen() {
+  document.getElementById('register-screen').classList.remove('visible');
+  document.getElementById('register-success-screen').classList.remove('visible');
+  document.getElementById('login-screen').classList.remove('hidden');
+  hideLoginMessages();
+}
+
+// ── Inscription ──────────────────────────────────────────────────────────
+
+async function doRegister() {
+  const email  = document.getElementById('register-email')?.value?.trim();
+  const pwd    = document.getElementById('register-password')?.value;
+  const pwd2   = document.getElementById('register-password2')?.value;
+  const btn    = document.getElementById('register-btn');
+  const errEl  = document.getElementById('register-error');
+  const errTxt = document.getElementById('register-error-text');
+
+  const showErr = msg => {
+    if (errTxt) errTxt.textContent = msg;
+    if (errEl)  errEl.classList.add('show');
+  };
+  const hideErr = () => { if (errEl) errEl.classList.remove('show'); };
+
+  // Validations locales
+  if (!email || !pwd || !pwd2) { showErr('Veuillez remplir tous les champs.'); return; }
+  if (!email.includes('@'))    { showErr('Adresse email invalide.'); return; }
+  if (pwd.length < 6)          { showErr('Le mot de passe doit contenir au moins 6 caractères.'); return; }
+  if (pwd !== pwd2)            { showErr('Les mots de passe ne correspondent pas.'); return; }
+
+  hideErr();
+  btn.disabled = true;
+  btn.textContent = 'Création en cours…';
+
+  try {
+    const { data, error } = await _supabase.auth.signUp({
+      email,
+      password: pwd,
+      options: {
+        // Redirige vers l'origine courante après clic sur le lien de confirmation.
+        // Fonctionne en production (https://ufolep-gaf.fr) et en local (localhost:*).
+        emailRedirectTo: window.location.origin,
+        // data transmis au trigger handle_new_user pour créer le profil lecteur
+        data: { role: 'lecteur' }
+      }
+    });
+
+    if (error) throw error;
+
+    // Succès : afficher l'écran de confirmation
+    document.getElementById('register-screen').classList.remove('visible');
+    const emailSpan = document.getElementById('register-success-email');
+    if (emailSpan) emailSpan.textContent = email;
+    document.getElementById('register-success-screen').classList.add('visible');
+    // Réinitialiser le feedback et le bouton resend pour un affichage propre
+    const fb  = document.getElementById('resend-feedback');
+    const rb  = document.getElementById('resend-btn');
+    if (fb) { fb.style.display = 'none'; fb.textContent = ''; }
+    if (rb) { rb.disabled = false; }
+
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Créer mon compte →';
+    const raw = (e.message || '').toLowerCase();
+    let msg;
+    if (raw.includes('rate limit') || raw.includes('email rate limit')) {
+      msg = `Trop de demandes d'inscription. Veuillez attendre quelques minutes avant de réessayer ou utiliser une autre adresse email.`;
+    } else if (raw.includes('already registered') || raw.includes('already been registered')) {
+      // Proposer le renvoi si le compte existe mais n'est pas confirmé
+      msg = `Un compte existe déjà avec cette adresse email. Si vous n'avez pas confirmé votre inscription, cliquez sur "Créer mon compte" puis utilisez le bouton "Renvoyer l'email de confirmation".`;
+    } else if (raw.includes('password should be') || raw.includes('password')) {
+      msg = 'Mot de passe trop faible (minimum 6 caractères).';
+    } else if (raw.includes('valid email') || raw.includes('invalid email')) {
+      msg = 'Adresse email invalide.';
+    } else {
+      msg = e.message || 'Erreur lors de la création du compte.';
+    }
+    showErr(msg);
+  }
+}
+
+// ── Renvoi de l'email de confirmation ───────────────────────────────────
+
+async function resendConfirmationEmail() {
+  const email = document.getElementById('register-success-email')?.textContent?.trim();
+  const btn   = document.getElementById('resend-btn');
+  const fb    = document.getElementById('resend-feedback');
+
+  const showFb = (msg, ok) => {
+    if (!fb) return;
+    fb.textContent = msg;
+    fb.style.display = 'block';
+    fb.style.background  = ok ? '#f0fff4' : '#fff0f0';
+    fb.style.border      = `1px solid ${ok ? '#9ee6b0' : '#ffd0d0'}`;
+    fb.style.color       = ok ? '#1a7a3a' : '#c00';
+  };
+
+  if (!email) { showFb('Adresse email introuvable. Revenez à la connexion.', false); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Envoi en cours…'; }
+
+  try {
+    const { error } = await _supabase.auth.resend({ type: 'signup', email });
+    if (error) throw error;
+    showFb('✅ Email de confirmation renvoyé ! Vérifiez votre boîte mail.', true);
+  } catch(e) {
+    const raw = (e.message || '').toLowerCase();
+    let msg;
+    if (raw.includes('rate limit') || raw.includes('email rate limit')) {
+      msg = 'Trop de demandes. Veuillez attendre quelques minutes avant de réessayer.';
+    } else if (raw.includes('already confirmed') || raw.includes('email already confirmed')) {
+      msg = 'Cet email est déjà confirmé. Vous pouvez vous connecter directement.';
+    } else {
+      msg = e.message || 'Erreur lors du renvoi. Réessayez plus tard.';
+    }
+    showFb('⛔ ' + msg, false);
+  } finally {
+    // Réactiver le bouton après 60s pour éviter les abus
+    if (btn) {
+      btn.textContent = `📧 Renvoyer l'email de confirmation`;
+      setTimeout(() => { if (btn) btn.disabled = false; }, 60_000);
+    }
   }
 }
 
@@ -9473,74 +10456,74 @@ function updateSidebarUser() {
   const isLecteur  = _supaRole === 'lecteur';
   const isSupabase = _supaMode;
 
-  // ── Navigation conditionnelle ────────────────────────────
-  const navMig  = document.getElementById('nav-migration');
-  if (navMig)  navMig.style.display  = (isSupabase && isAdmin) ? 'flex' : 'none';
+  // Helpers : accès DOM + affichage conditionnel
+  // Note : les nav-item utilisent display:flex — toujours passer 'flex' pour eux
+  const el   = id => document.getElementById(id);
+  const show = (id, visible, mode = 'flex') =>
+    el(id) && (el(id).style.display = visible ? mode : 'none');
 
-  const navUsers = document.getElementById('nav-users');
-  if (navUsers) navUsers.style.display = (isSupabase && isAdmin) ? 'flex' : 'none';
-
-  // Historique et Export BDD : cachés pour les lecteurs
-  const navHist   = document.getElementById('nav-historique');
-  const navExport = document.getElementById('nav-export-bdd');
-  const hideForLecteur = (isSupabase && isLecteur) ? 'none' : '';
-  if (navHist)   navHist.style.display   = hideForLecteur;
-  if (navExport) navExport.style.display = hideForLecteur;
-
-  // ── Bouton suppression — admin seulement ─────────────────
-  const btnClear = document.getElementById('btn-clear-data');
-  if (btnClear) btnClear.style.display = isAdmin ? 'inline-flex' : 'none';
-
-  // ── Boutons Supabase ──────────────────────────────────────
-  const btnSaveWrap = document.getElementById('btn-supabase-save-wrap');
-  if (btnSaveWrap) btnSaveWrap.style.display = isSupabase ? 'block' : 'none';
-  const btnSaveOnly = document.getElementById('btn-save-supabase');
-  if (btnSaveOnly) btnSaveOnly.style.display = canWrite() ? 'block' : 'none';
-
-  // ── Boutons stockage SQLite : cachés pour les lecteurs ───
-  const sqliteBtns = document.getElementById('sqlite-storage-btns');
-  if (sqliteBtns) sqliteBtns.style.display = isLecteur ? 'none' : 'flex';
-
-  // ── Indicateur mode SQLite ───────────────────────────────
-  const sqliteInd = document.getElementById('sqlite-mode-indicator');
-  if (sqliteInd) sqliteInd.style.display = (!isSupabase) ? 'block' : 'none';
-
-  // ── Topbar : CSV / JSON / Importer ─────────────────────
-  const topbarWriteBtns = ['btn-export-csv', 'btn-export-json', 'btn-import'];
-  topbarWriteBtns.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = (isSupabase && isLecteur) ? 'none' : '';
-  });
-
-  // ── Infos utilisateur ────────────────────────────────────
-  const su = document.getElementById('sidebar-user');
-  if (su) su.style.display = isSupabase ? 'block' : 'none';
-
-  const em = document.getElementById('sidebar-user-email');
+  // ══ Infos utilisateur (bandeau haut) ═══════════════════════
+  show('sidebar-user', isSupabase, 'block');
+  const em = el('sidebar-user-email');
   if (em) em.textContent = _supaUser?.email || '';
-
-  const rb = document.getElementById('sidebar-user-role');
+  const rb = el('sidebar-user-role');
   if (rb) {
     rb.textContent = _supaRole || 'lecteur';
     rb.className   = 'role-badge ' + (_supaRole || 'lecteur');
   }
-
-  // Badge "Lecture seule" pour les lecteurs
-  let lecteurBadge = document.getElementById('lecteur-badge');
+  // Badge "Lecture seule" (lecteurs Supabase uniquement)
+  let badge = el('lecteur-badge');
   if (isLecteur && isSupabase) {
-    if (!lecteurBadge) {
-      lecteurBadge = document.createElement('span');
-      lecteurBadge.id = 'lecteur-badge';
-      lecteurBadge.style.cssText = 'display:inline-block;margin-top:4px;padding:2px 8px;' +
-        'background:rgba(255,165,0,.25);color:#f0c040;border-radius:8px;font-size:10px;' +
-        'font-weight:600;letter-spacing:.3px';
-      lecteurBadge.textContent = '👁 Lecture seule';
-      if (em) em.parentNode.insertBefore(lecteurBadge, em.nextSibling);
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.id = 'lecteur-badge';
+      badge.style.cssText = 'display:inline-block;margin-top:4px;padding:2px 8px;' +
+        'background:rgba(255,165,0,.25);color:#f0c040;border-radius:8px;' +
+        'font-size:10px;font-weight:600;letter-spacing:.3px';
+      badge.textContent = '👁 Lecture seule';
+      if (em) em.parentNode.insertBefore(badge, em.nextSibling);
     }
-    lecteurBadge.style.display = 'inline-block';
-  } else if (lecteurBadge) {
-    lecteurBadge.style.display = 'none';
+    badge.style.display = 'inline-block';
+  } else if (badge) {
+    badge.style.display = 'none';
   }
+
+  // ══ Section 1 : Navigation ══════════════════════════════════
+  // "Recharger les données" : visible par tous, seulement en mode Supabase
+  show('nav-reload', isSupabase);
+
+  // ══ Section 2 : Analyses ════════════════════════════════════
+  // Masqué pour les lecteurs (admin + coach uniquement)
+  show('section-analyses', !isLecteur, 'block');
+
+  // ══ Section 4 : Administration ══════════════════════════════
+  // Visible uniquement pour les admins
+  show('section-admin', isAdmin, 'block');
+
+  if (isAdmin) {
+    // Éléments disponibles en mode Supabase seulement
+    show('nav-supabase-save', isSupabase);
+    show('nav-migration',     isSupabase);
+    show('nav-users',         isSupabase);
+
+    // Éléments disponibles en mode SQLite local seulement
+    show('section-sqlite', !isSupabase, 'block');
+
+    // Toujours visible pour l'admin
+    show('nav-clear-wrap', true);
+  }
+
+  // ══ Indicateurs de mode ════════════════════════════════════
+  // Indicateur "Mode SQLite local" : visible hors Supabase, tous rôles
+  show('sqlite-mode-indicator', !isSupabase, 'block');
+
+  // ══ Topbar : boutons CSV/JSON/Import cachés ════════════════
+  // Ces boutons ont été déplacés dans la sidebar ; ils restent dans le
+  // DOM pour leurs event listeners mais ne doivent jamais être visibles.
+  ['btn-export-csv', 'btn-export-json', 'btn-import'].forEach(id => {
+    const b = el(id);
+    if (b) b.style.display = 'none';
+  });
 }
 
 // ── Chargement des données depuis Supabase ────────────────────────
@@ -9807,7 +10790,6 @@ function startApp() {
     hideLoginScreen();
   }
 }
-
 
 
 </script>
