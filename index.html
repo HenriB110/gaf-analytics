@@ -745,8 +745,12 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
 .section-sub   { font-size: 13px; color: var(--c-text2); margin-bottom: 18px; }
 
 /* BACK BTN */
-.back-btn { display: flex; align-items: center; gap: 6px; color: var(--c-blue); cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+.back-btn { display: flex; align-items: center; gap: 6px; color: var(--c-blue); cursor: pointer; font-size: 14px; font-weight: 600; }
 .back-btn:hover { text-decoration: underline; }
+/* Fil d'Ariane */
+.breadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-bottom: 14px; font-size: 13px; color: var(--c-text3); }
+.breadcrumb-link { color: var(--c-blue); cursor: pointer; }
+.breadcrumb-link:hover { text-decoration: underline; }
 
 /* PROGRESS BAR */
 .progress-bar { height: 8px; background: var(--c-surface2); border-radius: 4px; overflow: hidden; }
@@ -3554,21 +3558,58 @@ const _NAV_LABELS = {
  *   comp_fiche  → "Finale Régionale"  (nom résolu)
  *   gymnaste_fiche → "Marie Dupont"
  */
+/**
+ * Libellé du bouton retour pour une entrée d'historique.
+ * Exemples : "Clubs", "Montpellier Gym", "Compétition G1 N5 - 12/04/2025"
+ */
 function getBackButtonLabel(entry) {
   const page = entry.page;
-  // Fiches : libellé contextuel avec le nom réel
   if (page === 'gymnaste_fiche' && entry.gymnaste) {
     const n = `${entry.gymnaste.prenom || ''} ${entry.gymnaste.nom || ''}`.trim();
     return n || 'Fiche Gymnaste';
   }
-  if (page === 'club_fiche' && entry.club)
-    return entry.club;
+  if (page === 'club_fiche' && entry.club) return entry.club;
   if (page === 'comp_fiche' && entry.comp) {
     const c = state.competitions.find(x => x.id === entry.comp);
-    return c ? c.nom : 'Fiche Compétition';
+    // Libellé riche : "Compétition G1 N5 · 12/04/2025"
+    if (c) return c.nom + (c.date ? ' · ' + fmtDate(c.date) : '');
+    return 'Fiche Compétition';
   }
-  // Pages principales : libellé court depuis le dictionnaire
   return _NAV_LABELS[page] || 'Retour';
+}
+
+/**
+ * Génère le fil d'Ariane (breadcrumb) à partir de _navHistory + la page courante.
+ * Chaque élément cliquable navigue via goBack() autant de fois que nécessaire.
+ * Limite à 4 segments pour rester lisible.
+ *
+ * Exemple : Clubs > Montpellier Gym > Finale Régionale · 12/04/2025 > Léa Durand
+ */
+function renderBreadcrumb(currentLabel) {
+  // Construire la liste des segments depuis l'historique
+  // _navHistory[0] = plus ancienne, [n-1] = plus récente
+  const MAX_SEGS = 4;
+  const all = [..._navHistory, null]; // null = page courante
+  // Tronquer si trop long (garder les plus récents + courant)
+  const segs = all.length > MAX_SEGS ? all.slice(all.length - MAX_SEGS) : all;
+  const stepsBack = segs.length - 1; // nb de goBack() pour atteindre segs[0]
+
+  const parts = segs.map((entry, idx) => {
+    const isCurrent = entry === null;
+    if (isCurrent) {
+      // Élément courant : non cliquable, en gras
+      return `<span style="font-weight:600;color:var(--c-text)">${currentLabel}</span>`;
+    }
+    const label = getBackButtonLabel(entry);
+    const stepsToGo = stepsBack - idx; // nb de goBack() pour y arriver
+    const onclick = stepsToGo === 1
+      ? 'goBack()'
+      : `(function(){for(let i=0;i<${stepsToGo};i++)goBack();})()`;
+    return `<span class="breadcrumb-link" onclick="${onclick}">${label}</span>`;
+  });
+
+  const sep = `<span style="color:var(--c-text3);margin:0 5px;font-size:12px">›</span>`;
+  return `<nav class="breadcrumb" aria-label="Fil d'Ariane">${parts.join(sep)}</nav>`;
 }
 
 /**
@@ -4203,12 +4244,7 @@ function renderCompFiche() {
   const nbEquipes   = [...new Set(teamRes.map(t=>t.equipeNom))].length;
 
   return `
-    <!-- Fil d'Ariane -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-      <div class="back-btn" onclick="goBack()">← ${goBackLabel()}</div>
-      <span style="color:var(--c-text3);font-size:13px">›</span>
-      <span style="font-size:13px;color:var(--c-text2)">${compNom}</span>
-    </div>
+    ${renderBreadcrumb(compNom)}
 
         <!-- En-tête compétition -->
     <div class="section-title">🏅 ${compNom}</div>
@@ -4783,11 +4819,7 @@ function renderGymnastesFiche() {
 
   return `
     <!-- Fil d'Ariane + Retour contextuel -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-      <div class="back-btn" onclick="goBack()">← ${goBackLabel()}</div>
-      <span style="color:var(--c-text3);font-size:13px">›</span>
-      <span style="font-size:13px;color:var(--c-text2);font-weight:600">${prenom} ${nom}</span>
-    </div>
+    ${renderBreadcrumb(prenom + ' ' + nom)}
 
     <div class="gymnaste-header">
       <div class="gymnaste-avatar">${initials}</div>
@@ -4810,6 +4842,7 @@ function renderGymnastesFiche() {
       <button class="tab-btn active" data-tab="tab-graphiques">Graphiques</button>
       <button class="tab-btn" data-tab="tab-classements">📋 Classements</button>
       <button class="tab-btn" data-tab="tab-saisons">Résumé par saison</button>
+      <button class="tab-btn" data-tab="tab-evolution">📈 Évolution</button>
       <button class="tab-btn" data-tab="tab-comps">Historique compétitions</button>
     </div>
 
@@ -4876,6 +4909,76 @@ function renderGymnastesFiche() {
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- ══ Onglet Évolution par saison ══ -->
+    <div class="tab-panel" id="tab-evolution">
+      ${(() => {
+        if (saisons.length < 2) return `
+          <div class="card" style="padding:32px;text-align:center;color:var(--c-text3)">
+            <div style="font-size:32px;margin-bottom:12px">📊</div>
+            <strong>Données disponibles sur une seule saison</strong>
+            <p style="font-size:13px;margin-top:8px">L'évolution sera visible dès que la gymnaste participera à une seconde saison.</p>
+          </div>`;
+
+        // Calcul : meilleur résultat par saison + agrès
+        const saisonData = saisons.map(s => {
+          const sr = gymResults.filter(r => r.saison === s);
+          const bestTotal = sr.length ? Math.max(...sr.map(r => r.total)) : 0;
+          const agresData = {};
+          AGRES.forEach(ag => {
+            const scores = sr.map(r => r.agres?.[ag.code]?.final || 0).filter(v => v > 0);
+            agresData[ag.code] = scores.length ? Math.max(...scores) : 0;
+          });
+          return { saison: s, total: bestTotal, agres: agresData };
+        });
+
+        // Tableau résumé
+        const evoRows = saisonData.map((d, i) => {
+          const prev = i > 0 ? saisonData[i-1] : null;
+          const diff = prev ? d.total - prev.total : null;
+          const arrow = diff === null ? '' : diff > 0
+            ? `<span style="color:var(--c-green);font-size:11px">▲ +${fmt(diff)}</span>`
+            : diff < 0
+            ? `<span style="color:var(--c-red);font-size:11px">▼ ${fmt(diff)}</span>`
+            : `<span style="color:var(--c-text3);font-size:11px">= 0.000</span>`;
+          return `<tr>
+            <td style="font-weight:600">${d.saison}</td>
+            <td>${d.total > 0 ? `<strong class="${noteColor(d.total, 60)}">${fmt(d.total)}</strong>` : '—'} ${arrow}</td>
+            ${AGRES.map(ag => `<td class="${noteColor(d.agres[ag.code] || 0)}">${d.agres[ag.code] > 0 ? fmt(d.agres[ag.code]) : '—'}</td>`).join('')}
+          </tr>`;
+        }).join('');
+
+        return `
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><span>📈</span><h2>Progression par saison</h2>
+              <span style="margin-left:auto;font-size:12px;color:var(--c-text3)">${saisons.length} saisons</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr>
+                  <th>Saison</th><th>Meilleur total</th>
+                  ${AGRES.map(ag => `<th>${ag.icon} ${ag.code}</th>`).join('')}
+                </tr></thead>
+                <tbody>${evoRows}</tbody>
+              </table>
+            </div>
+          </div>
+          <div class="charts-grid">
+            <div class="chart-card" style="grid-column:1/-1">
+              <h3>📈 Évolution du meilleur total par saison</h3>
+              <p style="font-size:11px;color:var(--c-text3);margin:-4px 0 8px">Meilleur score obtenu chaque saison</p>
+              <div class="chart-wrap" style="height:260px"><canvas id="chart-gymn-evo-total"></canvas></div>
+              <p style="font-size:10px;color:var(--c-text3);margin-top:6px;font-style:italic">Échelle adaptée pour une meilleure lisibilité des variations</p>
+            </div>
+            <div class="chart-card" style="grid-column:1/-1">
+              <h3>🕸 Évolution par agrès</h3>
+              <p style="font-size:11px;color:var(--c-text3);margin:-4px 0 8px">Meilleur score par agrès chaque saison</p>
+              <div class="chart-wrap" style="height:260px"><canvas id="chart-gymn-evo-agres"></canvas></div>
+              <p style="font-size:10px;color:var(--c-text3);margin-top:6px;font-style:italic">Échelle adaptée pour une meilleure lisibilité des variations</p>
+            </div>
+          </div>`;
+      })()}
     </div>
 
     <div class="tab-panel" id="tab-comps">
@@ -5368,7 +5471,7 @@ function renderClubFiche() {
   const equipeVariants = equipeNoms.filter(e => normalizeClub(e) === nom && e !== nom);
 
   return `
-    <div class="back-btn" onclick="goBack()">← ${goBackLabel()}</div>
+    ${renderBreadcrumb(nom)}
 
     <div class="gymnaste-header" style="margin-bottom:20px">
       <div class="gymnaste-avatar" style="width:72px;height:72px;font-size:26px;border-radius:12px">🏟</div>
@@ -7630,6 +7733,80 @@ function initCharts() {
         scales:{ y:{ grid:{color:gridColor} }, x:{ grid:{color:gridColor} } }
       }
     });
+    // ── Graphiques évolution par saison (onglet Évolution) ─────────────
+    if (document.getElementById('chart-gymn-evo-total')) {
+      const saisons = [...new Set(gr.map(r=>r.saison))].sort();
+      if (saisons.length >= 2) {
+        // Meilleur total par saison
+        const totauxSaison = saisons.map(s => {
+          const sr = gr.filter(r => r.saison === s);
+          return sr.length ? Math.max(...sr.map(r => r.total)) : 0;
+        });
+        // ── Graphique 1 : Évolution du meilleur total par saison ──────────
+        // Échelle Y dynamique : marge ±2 pts autour des données réelles
+        const validTotaux = totauxSaison.filter(v => v > 0);
+        const totalYMin = validTotaux.length ? Math.max(0, Math.min(...validTotaux) - 2) : 0;
+        const totalYMax = validTotaux.length ? Math.max(...validTotaux) + 2 : 50;
+
+        mkChart('chart-gymn-evo-total', {
+          type: 'line',
+          data: {
+            labels: saisons,
+            datasets: [{ label: 'Meilleur total', data: totauxSaison,
+              borderColor: CHART_PALETTE[0], backgroundColor: CHART_PALETTE[0]+'22',
+              borderWidth: 2.5, tension: .35,
+              pointRadius: 6, pointHoverRadius: 8, pointBorderWidth: 2,
+              fill: true }]
+          },
+          options: { responsive: true, maintainAspectRatio: false,
+            scales: {
+              y: { grid: { color: gridColor }, min: totalYMin, max: totalYMax,
+                   ticks: { callback: v => v.toFixed(1) } },
+              x: { grid: { color: gridColor } }
+            },
+            plugins: {
+              tooltip: { callbacks: { label: ctx => ' ' + ctx.parsed.y.toFixed(3) } },
+              legend: { display: false }
+            }
+          }
+        });
+
+        // ── Graphique 2 : Évolution par agrès ──────────────────────────────
+        // Calculer min/max sur l'ensemble des données agrès (valeurs non nulles)
+        const agresDatasets = AGRES.map((ag, i) => ({
+          label: ag.icon + ' ' + ag.code,
+          data: saisons.map(s => {
+            const sr = gr.filter(r => r.saison === s);
+            const scores = sr.map(r => r.agres?.[ag.code]?.final || 0).filter(v => v > 0);
+            return scores.length ? Math.max(...scores) : null;
+          }),
+          borderColor: CHART_PALETTE[i], backgroundColor: CHART_PALETTE[i]+'22',
+          borderWidth: 2, tension: .35,
+          pointRadius: 5, pointHoverRadius: 7,
+          spanGaps: true, fill: false
+        }));
+
+        // Marge ±1.5 autour des valeurs observées (notes entre ~8 et ~13 typiquement)
+        const allAgresVals = agresDatasets.flatMap(d => d.data.filter(v => v !== null));
+        const agresYMin = allAgresVals.length ? Math.max(0, Math.min(...allAgresVals) - 1.5) : 0;
+        const agresYMax = allAgresVals.length ? Math.min(20, Math.max(...allAgresVals) + 1.5) : 20;
+
+        mkChart('chart-gymn-evo-agres', {
+          type: 'line',
+          data: { labels: saisons, datasets: agresDatasets },
+          options: { responsive: true, maintainAspectRatio: false,
+            scales: {
+              y: { grid: { color: gridColor }, min: agresYMin, max: agresYMax,
+                   ticks: { callback: v => v.toFixed(1) } },
+              x: { grid: { color: gridColor } }
+            },
+            plugins: {
+              tooltip: { callbacks: { label: ctx => ctx.dataset.label + ' : ' + ctx.parsed.y.toFixed(3) } }
+            }
+          }
+        });
+      }
+    }
   } // fin if chart-gymn-total
 
   // CLASSEMENTS
@@ -8772,7 +8949,28 @@ function showAbout() {
 
         ${[
           {
-            ver: '1.6.11', date: '14 mai 2026', current: true,
+            ver: '1.7.1', date: '14 mai 2026', current: true,
+            items: [
+              'Graphiques Évolution : échelles Y dynamiques — plus de min:0 figé, marge ±2 pts sur le total, ±1.5 pt sur les agrès',
+              'Graphique total : légende masquée, points plus visibles (6px), label amélioré dans le tooltip',
+              'Graphique agrès : icônes dans les labels (🤸 VT…), tooltip enrichi avec le code agrès',
+              'Mention "Échelle adaptée" sous chaque graphique',
+              'Passage en version v1.7.1',
+            ]
+          },
+          {
+            ver: '1.7.0', date: '14 mai 2026', current: false,
+            items: [
+              'Fil d\'Ariane (breadcrumb) cliquable dans les 3 fiches : gymnaste, club et compétition — chaque segment ramène à la page correspondante via goBack()',
+              'getBackButtonLabel() enrichi : libellé de compétition avec date ("Finale G1 N5 · 12/04/2025")',
+              'Nouvel onglet "Évolution" dans la fiche gymnaste : tableau de progression par saison avec indicateurs ▲▼ + 2 graphiques Chart.js (total et par agrès)',
+              'Message clair si les données ne couvrent qu\'une seule saison',
+              'CSS .breadcrumb + .breadcrumb-link pour le fil d\'Ariane',
+              'Passage en version v1.7.0',
+            ]
+          },
+          {
+            ver: '1.6.11', date: '14 mai 2026', current: false,
             items: [
               'Renommage _navLabel → getBackButtonLabel (API claire et documentée)',
               'Libellés contextuels enrichis : "← Montpellier Gym", "← Finale Régionale", "← Marie Dupont" — lus depuis le snapshot, jamais depuis l\'état courant',
@@ -10408,7 +10606,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
-const APP_VERSION = '1.6.11';
+const APP_VERSION = '1.7.1';
 
 // Mettre à jour l'affichage de la version dès que le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
