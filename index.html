@@ -747,6 +747,53 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
 /* BACK BTN */
 .back-btn { display: flex; align-items: center; gap: 6px; color: var(--c-blue); cursor: pointer; font-size: 14px; font-weight: 600; }
 .back-btn:hover { text-decoration: underline; }
+/* ── Sections page Accueil ─────────────────────────────────── */
+.home-section-title {
+  font-size: 17px; font-weight: 800; color: var(--c-text);
+  display: flex; align-items: center; gap: 8px; margin: 28px 0 14px;
+}
+.home-section-title span { font-size: 20px; }
+/* Grille Top Performers : 4 col > 900px, 2 col mobile */
+.top-performers-grid {
+  display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 24px;
+}
+@media (max-width: 900px) { .top-performers-grid { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 480px) { .top-performers-grid { grid-template-columns: 1fr; } }
+/* Carte Top Performers */
+.tp-card {
+  border-radius: 14px; border: 1.5px solid var(--c-border);
+  background: var(--c-surface); overflow: hidden;
+}
+.tp-card-header {
+  padding: 12px 14px 10px; font-weight: 800; font-size: 13px;
+  display: flex; align-items: center; gap: 8px; color: #fff;
+}
+.tp-podium-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px; border-bottom: 1px solid var(--c-border);
+  font-size: 13px; transition: background .15s;
+}
+.tp-podium-row:last-child { border-bottom: none; }
+.tp-podium-row:hover { background: var(--c-surface2); }
+.tp-medal { font-size: 18px; flex-shrink: 0; width: 24px; text-align: center; }
+.tp-name { flex: 1; font-weight: 600; cursor: pointer; color: var(--c-blue); }
+.tp-name:hover { text-decoration: underline; }
+.tp-score { font-weight: 700; font-size: 13px; color: var(--c-text2); }
+.tp-club { font-size: 11px; color: var(--c-text3); white-space: nowrap;
+           overflow: hidden; text-overflow: ellipsis; max-width: 90px; }
+/* Grille Records du moment : identique à .records-grid */
+/* Clubs actifs */
+.active-clubs-list { display: flex; flex-direction: column; gap: 8px; }
+.active-club-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-radius: 10px; background: var(--c-surface2);
+  transition: background .15s; cursor: pointer;
+}
+.active-club-row:hover { background: var(--c-border); }
+.active-club-rank { font-size: 18px; width: 28px; text-align: center; flex-shrink: 0; }
+.active-club-name { flex: 1; font-weight: 600; font-size: 13px; }
+.active-club-stat { font-size: 12px; color: var(--c-text3); }
+
 /* ── Grille Records par agrès ───────────────────────────────── */
 .records-grid {
   display: grid;
@@ -3736,9 +3783,11 @@ function _keyPage() {
   const s = state;
   return [
     s.currentPage,
-    s.currentGroupe   || '',
-    s.currentClub     || '',
-    s.currentGymnaste ? (s.currentGymnaste.nom + '|' + s.currentGymnaste.prenom) : '',
+    s.currentGroupe      || '',
+    s.currentClub        || '',
+    s.currentGymnaste    ? (s.currentGymnaste.nom + '|' + s.currentGymnaste.prenom) : '',
+    s.homeFilterSaison   || '',   // filtre saison page Accueil
+    s.homeFilterCategory || '',   // filtre catégorie page Accueil
   ].join('|');
 }
 
@@ -3849,6 +3898,7 @@ function _chartDataSig() {
     // Filtres principaux (Classements, Home)
     s.filterSaison || '', s.filterCat || '', s.filterGroupe || '',
     s.activeAgres  || '',
+    s.homeFilterSaison   || '', s.homeFilterCategory || '',  // filtres accueil
     // Fiche gymnaste
     s.currentGroupe || '',
     s.currentGymnaste ? (s.currentGymnaste.nom + '|' + s.currentGymnaste.prenom) : '',
@@ -3975,10 +4025,10 @@ function renderPage() {
    PAGE: HOME
 ========================================================= */
 function renderHome() {
-  const total = state.results.length;
-  const gymns = uniqueGymnastes(state.results).length;
-  const comps = state.competitions.length;
-  const saisons = [...new Set(state.results.map(r=>r.saison))].length;
+  const total  = state.results.length;
+  const gymns  = uniqueGymnastes(state.results).length;
+  const comps  = state.competitions.length;
+  const nbSaisons = [...new Set(state.results.map(r=>r.saison))].length;
 
   if (total === 0) return `
     <div class="empty-state">
@@ -3988,17 +4038,191 @@ function renderHome() {
       <button class="btn btn-primary" onclick="openModal()">＋ Importer des données</button>
     </div>`;
 
+  // ── Données de base ─────────────────────────────────────────────────────
+  const allSaisons = [...new Set(state.results.map(r=>r.saison))].sort().reverse();
+  const lastSaison = allSaisons[0] || '';
+  const selSaison  = state.homeFilterSaison || lastSaison;
+  // Double filtre : saison ET catégorie (si sélectionnée)
+  const selCat     = state.homeFilterCategory || '';
+  const resFiltered = state.results.filter(r =>
+    (!selSaison || r.saison    === selSaison) &&
+    (!selCat    || r.categorie === selCat)
+  );
+  // Catégories disponibles pour la saison sélectionnée
+  const availCats = [...new Set(
+    state.results
+      .filter(r => !selSaison || r.saison === selSaison)
+      .map(r => r.categorie)
+  )].sort();
+
+  // ── Stat cards globales ─────────────────────────────────────────────────
   const grStats = Object.keys(GROUPES).map(g => {
-    const gr = state.results.filter(r=>r.groupe===g);
+    const gr   = state.results.filter(r=>r.groupe===g);
     const gymG = uniqueGymnastes(gr).length;
     const topScore = gr.length ? max(gr.map(r=>r.total)) : 0;
-    return `<div class="stat-card ${g==='G1'?'blue':g==='G2'?'red':g==='G3'?'green':g==='GN'?'purple':'gold'}">
+    const cls  = g==='G1'?'blue':g==='G2'?'red':g==='G3'?'green':g==='GN'?'purple':'gold';
+    return `<div class="stat-card ${cls}">
       <div class="stat-value">${gymG}</div>
       <div class="stat-label">${g} — ${GROUPES[g].split('/')[0]}</div>
-      <div class="stat-sub">Meilleur total : <strong>${fmt(topScore)}</strong></div>
+      <div class="stat-sub">Meilleur : <strong>${fmt(topScore)}</strong></div>
     </div>`;
   }).join('');
 
+  // ── Filtre saison HTML (partagé sections 1+2) ───────────────────────────
+  const SELECT_STYLE = `font-size:13px;padding:5px 10px;border-radius:8px;
+    border:1px solid var(--c-border);background:var(--c-surface);color:var(--c-text)`;
+  const LABEL_STYLE = `font-size:13px;font-weight:600;color:var(--c-text2);white-space:nowrap`;
+
+  const saisonFilter = `
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <!-- Filtre Saison -->
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="${LABEL_STYLE}">📅 Saison</label>
+        <select style="${SELECT_STYLE}" onchange="state.homeFilterSaison=this.value;state.homeFilterCategory='';renderPage()">
+          ${allSaisons.map(s=>`<option value="${s}" ${s===selSaison?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <!-- Filtre Catégorie -->
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="${LABEL_STYLE}">🏷 Catégorie</label>
+        <select style="${SELECT_STYLE}" onchange="state.homeFilterCategory=this.value;renderPage()">
+          <option value="" ${!selCat?'selected':''}>Toutes</option>
+          ${availCats.map(c=>`<option value="${c}" ${c===selCat?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <!-- Bouton reset -->
+      ${(selSaison!==lastSaison||selCat)?`<button class="btn btn-outline btn-sm"
+        onclick="state.homeFilterSaison='';state.homeFilterCategory='';renderPage()">✕ Reset</button>`:''}
+    </div>`;
+
+  // ── SECTION 1 : Top Performers par Groupe ──────────────────────────────
+  const MEDALS = ['🥇','🥈','🥉'];
+  const GR_COLORS = { G1:'#003f8a', G2:'#d42020', G3:'#18a058', G4:'#f0a500', GN:'#7b3fe4' };
+
+  const tpCards = ['G1','G2','G3','G4'].map(g => {
+    const gr = resFiltered.filter(r => r.groupe === g);
+    // Meilleur résultat par gymnaste sur la saison
+    const gymMap = {};
+    gr.forEach(r => {
+      const k = gymKey(r.nom, r.prenom);
+      if (!gymMap[k] || r.total > gymMap[k].total) gymMap[k] = r;
+    });
+    const top3 = Object.values(gymMap).sort((a,b) => b.total-a.total).slice(0,3);
+    const headerColor = GR_COLORS[g] || '#555';
+
+    const rows = top3.length ? top3.map((r,i) => {
+      const nomSafe    = r.nom.replace(/'/g,"\'");
+      const prenomSafe = r.prenom.replace(/'/g,"\'");
+      return `<div class="tp-podium-row">
+        <span class="tp-medal">${MEDALS[i]}</span>
+        <div style="flex:1;min-width:0">
+          <div class="tp-name" onclick="openGymnastesFiche('${nomSafe}','${prenomSafe}')">${r.prenom} ${r.nom}</div>
+          <div class="tp-club">${r.club}</div>
+        </div>
+        <span class="tp-score">${fmt(r.total)}</span>
+      </div>`;
+    }).join('') : `<div style="padding:16px;text-align:center;font-size:12px;color:var(--c-text3);font-style:italic">Aucune donnée</div>`;
+
+    return `<div class="tp-card">
+      <div class="tp-card-header" style="background:${headerColor}">
+        <span style="font-size:16px">📍</span>
+        <div>
+          <div>${g}</div>
+          <div style="font-size:10px;font-weight:500;opacity:.85">${GROUPES[g]}</div>
+        </div>
+      </div>
+      ${rows}
+    </div>`;
+  }).join('');
+
+  // ── SECTION 2 : Records du moment ──────────────────────────────────────
+  const AGRES_COLORS_HOME = {
+    VT: { bg:'#e8f0fe', border:'#4285f4', accent:'#1a56db', label:'Saut' },
+    UB: { bg:'#fce8e6', border:'#e53935', accent:'#c62828', label:'Barres Asym.' },
+    BB: { bg:'#e6f4ea', border:'#34a853', accent:'#1e7e34', label:'Poutre' },
+    FX: { bg:'#fff8e1', border:'#f9a825', accent:'#e65100', label:'Sol' },
+  };
+  const recordCards = AGRES.map(ag => {
+    const col = AGRES_COLORS_HOME[ag.code];
+    // Meilleur résultat sur la saison pour cet agrès
+    const best = [...resFiltered]
+      .filter(r => (r.agres?.[ag.code]?.final || 0) > 0)
+      .sort((a,b) => (b.agres[ag.code].final) - (a.agres[ag.code].final))[0];
+    if (!best) return `
+      <div class="record-card empty" style="--bg:${col.bg};--brd:${col.border}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:20px">${ag.icon}</span>
+          <div>
+            <div style="font-weight:800;font-size:13px;color:${col.accent}">${ag.code}</div>
+            <div style="font-size:10px;color:${col.accent};opacity:.7">${col.label}</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#999;font-style:italic;padding:8px 0">Aucune donnée</div>
+      </div>`;
+    const nomSafe    = best.nom.replace(/'/g,"\'");
+    const prenomSafe = best.prenom.replace(/'/g,"\'");
+    return `
+      <div class="record-card" title="Record sur la saison ${selSaison}"
+           style="--bg:${col.bg};--brd:${col.border}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:22px;line-height:1">${ag.icon}</span>
+            <div>
+              <div style="font-weight:800;font-size:14px;color:${col.accent};letter-spacing:.3px">${ag.code}</div>
+              <div style="font-size:10px;color:${col.accent};opacity:.75">${col.label}</div>
+            </div>
+          </div>
+          <span class="record-badge" style="color:${col.accent};background:${col.border}2e">🏅 Saison</span>
+        </div>
+        <div class="record-score" style="color:${col.accent};text-shadow:0 1px 2px ${col.border}44">
+          ${fmt(best.agres[ag.code].final)}
+        </div>
+        <div class="record-gymnaste gymnaste-link" onclick="openGymnastesFiche('${nomSafe}','${prenomSafe}')">
+          <span>🤸</span><span>${best.prenom} ${best.nom}</span>
+        </div>
+        <div class="record-source">${best.club}${best.compNom?'<br>'+best.compNom:''}</div>
+      </div>`;
+  }).join('');
+
+  // ── SECTION 3 : Clubs les plus actifs ──────────────────────────────────
+  const clubCount = {};
+  const clubBest  = {};
+  resFiltered.forEach(r => {
+    const c = r.club || '—';
+    clubCount[c] = (clubCount[c] || 0) + 1;
+    if (!clubBest[c] || r.total > clubBest[c]) clubBest[c] = r.total;
+  });
+  const topClubs = Object.entries(clubCount)
+    .sort((a,b) => b[1]-a[1]).slice(0,6);
+  const CLUB_RANK_ICONS = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣'];
+  const clubRows = topClubs.map(([nom, count], i) => {
+    const safe = nom.replace(/'/g,"\'");
+    return `<div class="active-club-row" onclick="openClubFiche('${safe}')">
+      <span class="active-club-rank">${CLUB_RANK_ICONS[i]||i+1}</span>
+      <span class="active-club-name">${nom}</span>
+      <span class="active-club-stat">${count} résultat${count>1?'s':''}</span>
+      <span class="active-club-stat" style="margin-left:8px">Meilleur : <strong>${fmt(clubBest[nom])}</strong></span>
+    </div>`;
+  }).join('');
+
+  // ── SECTION 4 : Activité récente ───────────────────────────────────────
+  const now = new Date();
+  const cutoff = new Date(now - 30*24*3600*1000).toISOString().slice(0,10);
+  // On utilise la date d'import via importHistory si disponible
+  const recentImports = state.importHistory?.filter(h => h.importedAt >= cutoff) || [];
+  const recentComps30 = state.competitions.filter(c => c.date >= cutoff);
+
+  // Activité par mois (12 derniers mois) basée sur dates des compétitions
+  const monthLabels = [];
+  const monthCounts = [];
+  for (let i=11; i>=0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    monthLabels.push(ym.slice(0,7));
+    monthCounts.push(state.results.filter(r => (r.date||'').startsWith(ym)).length);
+  }
+
+  // ── Dernières compétitions ──────────────────────────────────────────────
   const recentComps = [...state.competitions].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
   const compRows = recentComps.map(c => {
     const nbR = state.results.filter(r=>r.compId===c.id).length;
@@ -4013,30 +4237,71 @@ function renderHome() {
   }).join('');
 
   return `
+    <!-- ── Stat cards globales ── -->
     <div class="stats-grid">
-      <div class="stat-card blue">
-        <div class="stat-value">${gymns}</div>
-        <div class="stat-label">Gymnastes</div>
-      </div>
-      <div class="stat-card red">
-        <div class="stat-value">${comps}</div>
-        <div class="stat-label">Compétitions</div>
-      </div>
-      <div class="stat-card gold">
-        <div class="stat-value">${total}</div>
-        <div class="stat-label">Résultats</div>
-      </div>
-      <div class="stat-card green">
-        <div class="stat-value">${saisons}</div>
-        <div class="stat-label">Saisons</div>
-      </div>
+      <div class="stat-card blue"><div class="stat-value">${gymns}</div><div class="stat-label">Gymnastes</div></div>
+      <div class="stat-card red"><div class="stat-value">${comps}</div><div class="stat-label">Compétitions</div></div>
+      <div class="stat-card gold"><div class="stat-value">${total}</div><div class="stat-label">Résultats</div></div>
+      <div class="stat-card green"><div class="stat-value">${nbSaisons}</div><div class="stat-label">Saisons</div></div>
       ${grStats}
     </div>
 
-    <div class="card" style="margin-bottom:20px">
-      <div class="card-header">
-        <span>🏆</span><h2>Dernières compétitions</h2>
+    <!-- ── Filtre saison partagé ── -->
+    <div class="card" style="padding:16px 20px;margin-bottom:0">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span style="font-size:16px">📅</span>
+        <strong style="font-size:14px">Vue par saison</strong>
+        ${saisonFilter}
       </div>
+    </div>
+
+    <!-- ── Section 1 : Top Performers par Groupe ── -->
+    <div class="home-section-title"><span>🏅</span> Top Performers par Groupe
+      <span style="font-size:12px;font-weight:400;color:var(--c-text3);margin-left:8px">${selSaison}${selCat?' · '+selCat:''}</span>
+    </div>
+    <div class="top-performers-grid">${tpCards}</div>
+
+    <!-- ── Section 2 : Records du moment ── -->
+    <div class="home-section-title"><span>⭐</span> Records de la saison
+      <span style="font-size:12px;font-weight:400;color:var(--c-text3);margin-left:8px">${selSaison}${selCat?' · '+selCat:''}</span>
+    </div>
+    <div class="records-grid" style="margin-bottom:24px">${recordCards}</div>
+
+    <!-- ── Section 3 : Clubs les plus actifs ── -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;align-items:start">
+      <div>
+        <div class="home-section-title" style="margin-top:0"><span>🏟</span> Clubs les plus actifs
+          <span style="font-size:12px;font-weight:400;color:var(--c-text3);margin-left:8px">${selSaison}${selCat?' · '+selCat:''}</span>
+        </div>
+        <div class="active-clubs-list">${clubRows}</div>
+      </div>
+
+      <!-- ── Section 4 : Activité récente ── -->
+      <div>
+        <div class="home-section-title" style="margin-top:0"><span>📊</span> Activité récente</div>
+        <div class="card" style="padding:16px 18px;margin-bottom:12px">
+          <div style="display:flex;gap:24px;flex-wrap:wrap">
+            <div style="text-align:center">
+              <div style="font-size:28px;font-weight:800;color:var(--c-blue)">${recentImports.length}</div>
+              <div style="font-size:11px;color:var(--c-text3)">imports ces 30j</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:28px;font-weight:800;color:var(--c-blue)">${recentComps30.length}</div>
+              <div style="font-size:11px;color:var(--c-text3)">compétitions ces 30j</div>
+            </div>
+          </div>
+        </div>
+        <div class="chart-card" style="margin:0">
+          <h3 style="font-size:13px;margin-bottom:6px">📈 Résultats par mois (12 mois)</h3>
+          <div class="chart-wrap" style="height:160px"><canvas id="chart-home-activity"></canvas></div>
+          <p style="font-size:10px;color:var(--c-text3);margin-top:6px;font-style:italic">Basé sur les dates des résultats enregistrés</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Dernières compétitions ── -->
+    <div class="home-section-title"><span>🗓</span> Dernières compétitions</div>
+    <div class="card" style="margin-bottom:20px">
       <div class="table-wrap">
         <table>
           <thead><tr><th>Date</th><th>Compétition</th><th>Groupe</th><th>Saison</th><th>Participants</th><th></th></tr></thead>
@@ -4045,6 +4310,7 @@ function renderHome() {
       </div>
     </div>
 
+    <!-- ── Graphiques globaux ── -->
     <div class="charts-grid">
       <div class="chart-card">
         <h3>📊 Répartition par groupe</h3>
@@ -4055,6 +4321,19 @@ function renderHome() {
         <div class="chart-wrap"><canvas id="chart-home-cat"></canvas></div>
       </div>
     </div>`;
+}
+
+// Exposer les données d'activité pour initCharts
+function _homeActivityData() {
+  const now = new Date();
+  const labels = [], counts = [];
+  for (let i=11; i>=0; i--) {
+    const d  = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    labels.push(ym.slice(5));   // "MM" seulement
+    counts.push(state.results.filter(r => (r.date||'').startsWith(ym)).length);
+  }
+  return { labels, counts };
 }
 
 /* =========================================================
@@ -7757,6 +8036,21 @@ function _chartsHome(textColor, gridColor) {
     data:{ labels:cats, datasets:[{ label:'Total moyen', data:catAvg.map(v=>+v.toFixed(2)), backgroundColor:CHART_PALETTE[0]+'aa', borderColor:CHART_PALETTE[0], borderWidth:2 }] },
     options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ grid:{color:gridColor} } }, plugins:{ legend:{display:false} } }
   });
+  // Graphique activité mensuelle
+  if (document.getElementById('chart-home-activity')) {
+    const { labels: actLabels, counts: actCounts } = _homeActivityData();
+    mkChart('chart-home-activity', {
+      type: 'line',
+      data: { labels: actLabels, datasets: [{ label: 'Résultats', data: actCounts,
+        borderColor: CHART_PALETTE[0], backgroundColor: CHART_PALETTE[0]+'22',
+        tension: .35, pointRadius: 3, fill: true, borderWidth: 2 }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        scales: { y: { grid: {color: gridColor}, beginAtZero: true,
+                       ticks: { stepSize: 1 } }, x: { grid: {color: gridColor} } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
 }
 
 /** Graphiques de la page groupe géographique */
@@ -9064,7 +9358,37 @@ function showAbout() {
 
         ${[
           {
-            ver: '1.7.3', date: '14 mai 2026', current: true,
+            ver: '1.8.2', date: '14 mai 2026', current: true,
+            items: [
+              'Filtre Catégorie ajouté sur la page Accueil (state.homeFilterCategory), fonctionnant en combinaison avec le filtre Saison',
+              'Double dropdown Saison + Catégorie côte à côte — les catégories s\'adaptent dynamiquement à la saison sélectionnée',
+              'Changer de Saison réinitialise automatiquement le filtre Catégorie',
+              'Bouton Reset unique supprime les deux filtres simultanément',
+              'Les 3 sections dynamiques (Top Performers, Records, Clubs actifs) réagissent aux deux filtres combinés',
+              'Passage en version v1.8.2',
+            ]
+          },
+          {
+            ver: '1.8.1', date: '14 mai 2026', current: false,
+            items: [
+              'Correction du filtre saison de la page Accueil : homeFilterSaison ajouté dans _keyPage() et _chartDataSig() — le changement de saison invalide désormais le cache de render et déclenche la mise à jour des 3 sections dynamiques',
+              'Passage en version v1.8.1',
+            ]
+          },
+          {
+            ver: '1.8.0', date: '14 mai 2026', current: false,
+            items: [
+              'Refonte complète de la page Accueil : 4 nouvelles sections dynamiques',
+              'Top Performers par Groupe : cartes G1/G2/G3/G4 avec podium médailles (🥇🥈🥉), gymnastes cliquables, filtre saison partagé',
+              'Records de la saison : grille 4 cartes colorées par agrès (réutilise le composant Records par agrès)',
+              'Clubs les plus actifs : Top 6 avec nombre de résultats et meilleur total, cliquables vers la fiche club',
+              'Activité récente : compteurs 30 jours + graphique sparkline sur 12 mois',
+              'Filtre saison centralisé (state.homeFilterSaison) partagé entre Top Performers et Records',
+              'Passage en version v1.8.0',
+            ]
+          },
+          {
+            ver: '1.7.3', date: '14 mai 2026', current: false,
             items: [
               'Cartes Records par agrès : refonte responsive avec classes CSS dédiées (.records-grid, .record-card)',
               'Grille 4 colonnes > 900px, 2×2 sur tablette/mobile, gap réduit < 480px — sans media query inline',
@@ -10742,7 +11066,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
-const APP_VERSION = '1.7.3';
+const APP_VERSION = '1.8.2';
 
 // Mettre à jour l'affichage de la version dès que le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
