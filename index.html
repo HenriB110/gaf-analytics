@@ -1335,6 +1335,14 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
     </div>
   </div>
 
+  <!-- ══ SECTION 2b : OUTILS COACH (admin + coach uniquement) ══ -->
+  <div id="section-outils-coach" style="display:none">
+    <div class="sidebar-section-label">Outils Coach</div>
+    <div class="nav-item" data-page="selection_equipe">
+      <span class="nav-icon">📋</span><span class="nav-label">Sélection d'équipe</span>
+    </div>
+  </div>
+
   <!-- ══ SECTION 3 : PAR GROUPE (visible par tous) ══ -->
   <div class="sidebar-section-label">Par Groupe</div>
   <div class="group-sub">
@@ -3627,6 +3635,7 @@ const PAGE_RENDERERS = {
   gymnaste_fiche:     renderGymnastesFiche,
   groupe:             renderGroupe,
   comp_equipes:       renderCompEquipes,
+  selection_equipe:   renderSelectionEquipe,
 };
 
 
@@ -3874,6 +3883,8 @@ function _keyAnalyses() {
     s.detailActiveMode   || '',
     // Intra-Club
     s.icGroupe || '', s.icClub || '', s.icCategory || '', s.icSearch || '',
+    // Sélection équipe
+    s.seSaison || '', s.seGroupe || '', s.seClub || '', s.seNiveau || '', (s.seGymns ?? []).join(','), s.seSearch || '',
     // Comparaison Equipes
     s.ceCategory || '', s.ceSaison || '', (s.ceClubs ?? []).join(','),
     s.ceActiveTab || '', s.ceClubSearch || '',
@@ -5025,6 +5036,385 @@ function gymnPrevLabel() {
   return PAGE_LABELS[state.gymnPrevPage] || 'Retour';
 }
 
+/**
+ * Rapport PDF complet d'une gymnaste.
+ * window.open + window.print — UTF-8 natif, sans jsPDF.
+ */
+function _exportGymPDF(nom, prenom) {
+  const gymResults = findGymnResults(nom, prenom).sort((a,b) => a.date.localeCompare(b.date));
+  if (!gymResults.length) return;
+
+  const now      = new Date();
+  const dateStr  = now.toLocaleDateString('fr-FR', {day:'2-digit',month:'long',year:'numeric'});
+  const clubs    = [...new Set(gymResults.map(r => normalizeClub(r.club)).filter(Boolean))];
+  const cats     = [...new Set(gymResults.map(r => r.categorie).filter(Boolean))];
+  const groupes  = [...new Set(gymResults.map(r => r.groupe).filter(Boolean))];
+  const saisons  = [...new Set(gymResults.map(r => r.saison).filter(Boolean))].sort().reverse();
+  const totals   = gymResults.map(r => r.total).filter(v => v > 0);
+
+  // ── Moyenne catégorie (dernière catégorie de la gymnaste) ─────────────
+  const lastCat    = gymResults[gymResults.length-1]?.categorie || cats[0] || '';
+  const catResults = state.results.filter(r => r.categorie === lastCat && r.total > 0);
+  const catAgresAvg = AGRES.reduce((acc, ag) => {
+    const sc = catResults.map(r => r.agres?.[ag.code]?.final || 0).filter(v => v > 0);
+    acc[ag.code] = sc.length ? avg(sc) : 0;
+    return acc;
+  }, {});
+  const catAgresTop = AGRES.reduce((acc, ag) => {
+    const sc = catResults.map(r => r.agres?.[ag.code]?.final || 0).filter(v => v > 0);
+    acc[ag.code] = sc.length ? Math.max(...sc) : 0;
+    return acc;
+  }, {});
+
+  // ── Stats par agrès ────────────────────────────────────────────────────
+  const agresData = AGRES.map(ag => {
+    const scores  = gymResults.map(r => r.agres?.[ag.code]?.final || 0).filter(v => v > 0);
+    const bestRes = gymResults.reduce((b, r) => {
+      const v = r.agres?.[ag.code]?.final || 0;
+      return (!b || v > (b.agres?.[ag.code]?.final || 0)) ? r : b;
+    }, null);
+    const avgScore = scores.length ? avg(scores) : 0;
+    const catAvg   = catAgresAvg[ag.code] || 0;
+    const catTop   = catAgresTop[ag.code] || 0;
+    // Écart-type : mesure de constance
+    const variance = scores.length > 1
+      ? scores.reduce((s,v) => s + (v-avgScore)**2, 0) / scores.length : 0;
+    const stdDev   = Math.sqrt(variance);
+    // Seuils adaptés à la GAF : variance naturelle ~0.3-0.6pt entre compétitions
+    const constance  = stdDev < 0.4 ? 'Très régulière' : stdDev < 0.9 ? 'Régulière' : 'Irrégulière';
+    const constColor = stdDev < 0.4 ? '#1a7a3a'       : stdDev < 0.9 ? '#c97c00'   : '#c62828';
+    return {
+      ...ag, scores,
+      best:     scores.length ? Math.max(...scores) : 0,
+      avgScore, stdDev, constance, constColor,
+      ecartCat: catAvg > 0 && avgScore > 0 ? avgScore - catAvg : null,
+      ecartTop: catTop > 0 && scores.length ? Math.max(...scores) - catTop : null,
+      catAvg, catTop,
+      bestComp: bestRes?.compNom || '',
+      n:        scores.length
+    };
+  });
+
+  // Forces & faiblesses
+  const sorted     = [...agresData].filter(a => a.avgScore > 0).sort((a,b) => b.avgScore - a.avgScore);
+  const strongest  = sorted.slice(0, 2);
+  const weakest    = sorted.slice(-2).reverse();
+
+  // Tendance : 1ère → dernière compétition
+  const firstTotal = gymResults[0]?.total || 0;
+  const lastTotal  = gymResults[gymResults.length-1]?.total || 0;
+  const trend      = totals.length >= 2 ? lastTotal - firstTotal : null;
+  const trendTxt   = trend === null ? 'N/D'
+    : trend >  0.5  ? `Progression (+${trend.toFixed(2)} pts)`
+    : trend < -0.5  ? `Régression (${trend.toFixed(2)} pts)`
+    : 'Stable';
+  const trendColor = trend === null ? '#888'
+    : trend > 0.5 ? '#1a7a3a' : trend < -0.5 ? '#c62828' : '#888';
+
+  // ── Graphique SVG multi-lignes : Total + 4 agrès ────────────────────
+  const SVG_COLORS = { Total:'#003f8a', VT:'#c62828', UB:'#2e7d32', BB:'#e65100', FX:'#6a1b9a' };
+  // Garder Total + les 2 agrès ayant le plus de passages (évite surcharge si peu de données)
+  const agresRankedForSvg = [...AGRES].sort((a,b)=>{
+    const na=gymResults.filter(r=>(r.agres?.[a.code]?.final||0)>0).length;
+    const nb=gymResults.filter(r=>(r.agres?.[b.code]?.final||0)>0).length;
+    return nb-na;
+  }).slice(0,4); // jusqu'à 4 agrès — filtrés par >=2 points ensuite
+  const SVG_SERIES = [
+    { key:'Total', label:'Total', vals: gymResults.map(r=>r.total).filter(v=>v>0) },
+    ...agresRankedForSvg.map(ag=>({
+      key:ag.code, label:ag.code,
+      vals: gymResults.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)
+    }))
+  ].filter(s=>s.vals.length>=2);
+
+  // Dates communes (toutes les compétitions avec total > 0)
+  const svgDates = gymResults.filter(r=>r.total>0).map(r=>r.date);
+  const svgN     = svgDates.length;
+
+  // Bornes Y globales sur toutes les séries
+  const allSvgVals = SVG_SERIES.flatMap(s=>gymResults.map(r=>{
+    if(s.key==='Total') return r.total>0?r.total:null;
+    return r.agres?.[s.key]?.final||null;
+  }).filter(v=>v!==null&&v>0));
+  const svgYMin = allSvgVals.length ? Math.max(0, Math.floor((Math.min(...allSvgVals)-0.8)*10)/10) : 0;
+  const svgYMax = allSvgVals.length ? Math.ceil((Math.max(...allSvgVals)+0.8)*10)/10 : 60;
+
+  const svgW=540, svgH=180, padL=40, padR=16, padT=14, padB=38;
+  const plotW=svgW-padL-padR, plotH=svgH-padT-padB;
+  const toX=i=>padL+(svgN>1?i*plotW/(svgN-1):plotW/2);
+  const toY=v=>padT+plotH-((v-svgYMin)/(svgYMax-svgYMin))*plotH;
+
+  const yTicks = 5;
+  const yStep  = (svgYMax-svgYMin)/(yTicks-1);
+
+  // Légende : compacte sur 1 ligne en haut à droite
+  const legendItems = SVG_SERIES.map((s,i)=>{
+    const lx = padL + i*80;   // espacement fixe 80px par item
+    return `<rect x="${lx}" y="3" width="14" height="4" fill="${SVG_COLORS[s.key]||'#888'}" rx="2"/>
+    <text x="${lx+17}" y="8" font-size="7.5" fill="#444" font-weight="${s.key==='Total'?'700':'400'}">${s.key==='Total'?'Total':s.label}</text>`;
+  }).join('');
+
+  const svgEl = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}"
+    style="width:100%;height:auto;border:1px solid #e0e7f0;border-radius:6px;background:#fafbfd;display:block">
+    <!-- Grille H -->
+    ${Array.from({length:yTicks},(_,k)=>{
+      const v=svgYMin+k*yStep; const y=toY(v);
+      return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${svgW-padR}" y2="${y.toFixed(1)}" stroke="${k===0?'#c8d8ec':'#eaeef5'}" stroke-width="${k===0?'1':'0.7'}"/>
+      <text x="${padL-3}" y="${(y+3).toFixed(1)}" font-size="7" fill="#aaa" text-anchor="end">${v.toFixed(0)}</text>`;
+    }).join('')}
+    <!-- Séries -->
+    ${SVG_SERIES.map(s=>{
+      const pts=gymResults.filter(r=>r.total>0).map((r,i)=>{
+        const v=s.key==='Total'?r.total:(r.agres?.[s.key]?.final||0);
+        return v>0?{x:toX(i),y:toY(v),v}:null;
+      });
+      const validPts=pts.filter(Boolean);
+      if(validPts.length<2)return '';
+      const col=SVG_COLORS[s.key]||'#888';
+      const dash=s.key==='Total'?'':'5,3';
+      const poly=validPts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+      const dots=validPts.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${s.key==='Total'?4:3}" fill="${col}" stroke="#fff" stroke-width="2"><title>${s.label}: ${p.v.toFixed(2)}</title></circle>`).join('');
+      return `<polyline points="${poly}" fill="none" stroke="${col}" stroke-width="${s.key==='Total'?2:1.5}" stroke-dasharray="${dash}" stroke-linejoin="round"/>${dots}`;
+    }).join('')}
+    <!-- Labels X -->
+    ${gymResults.filter(r=>r.total>0).map((r,i)=>{
+      const step=Math.max(1,Math.ceil(svgN/7));
+      const show=i%step===0||i===svgN-1;
+      const bx=toX(i).toFixed(1); const by=(padT+plotH+10).toFixed(1);
+      return show?`<text x="${bx}" y="${by}" font-size="7" fill="#999" text-anchor="end"
+        transform="rotate(-35 ${bx} ${by})">${fmtDate(r.date)}</text>`:'';
+    }).join('')}
+    <!-- Légende -->
+    ${legendItems}
+  </svg>`;
+
+  // ── Dernières compétitions (8 max, ordre DESC) ────────────────────────
+  const lastComps = [...gymResults].reverse().slice(0, 8);
+  const compsRows = lastComps.map((r,i) => `
+    <tr class="${i%2===0?'even':''}">
+      <td class="sm">${fmtDate(r.date)}</td>
+      <td style="font-size:7.5pt;word-break:break-word;hyphens:auto;overflow-wrap:break-word" title="${r.compNom||''}">${r.compNom||'—'}</td>
+      <td class="sm cat">${r.categorie}</td>
+      <td class="r b ${noteColor(r.total, 60)}">${r.total > 0 ? r.total.toFixed(2) : '—'}</td>
+      ${AGRES.map(ag => { const v = r.agres?.[ag.code]?.final || 0; return `<td class="r">${v>0?v.toFixed(2):'—'}</td>`; }).join('')}
+    </tr>`).join('');
+
+  // ── Tableau agrès (meilleure, moy., n passages) ───────────────────────
+  const agresRows = agresData.map((ag, i) => {
+    const ecartCatStyle = ag.ecartCat === null ? '' :
+      ag.ecartCat >= 0 ? 'color:#1a7a3a;font-weight:700' : 'color:#c62828;font-weight:700';
+    const ecartCatTxt = ag.ecartCat === null ? '—' :
+      (ag.ecartCat >= 0 ? '+' : '') + ag.ecartCat.toFixed(2);
+    const ecartTopTxt = ag.ecartTop === null ? '—' :
+      (ag.ecartTop >= 0 ? '+' : '') + ag.ecartTop.toFixed(2);
+    return `<tr class="${i%2===0?'even':''}">
+      <td class="b">${ag.label} (${ag.code})</td>
+      <td class="r b vg">${ag.best > 0 ? ag.best.toFixed(2) : '—'}</td>
+      <td class="r vb">${ag.avgScore > 0 ? ag.avgScore.toFixed(2) : '—'}</td>
+      <td class="r" style="${ecartCatStyle}">${ecartCatTxt}</td>
+      <td class="r sm">${ag.catTop > 0 ? ag.catTop.toFixed(2) : '—'}</td>
+      <td class="r" style="color:${ag.ecartTop!==null&&ag.ecartTop<0?'#c62828':'#888'}">${ecartTopTxt}</td>
+      <td class="r sm" style="color:${ag.constColor}">${ag.n > 1 ? ag.constance : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  // ── Meilleures performances par saison ───────────────────────────────
+  const saisonPerfs = saisons.map(s => {
+    const sr = gymResults.filter(r => r.saison === s && r.total > 0);
+    const bestTot = sr.length ? Math.max(...sr.map(r=>r.total)) : 0;
+    const agBest  = AGRES.reduce((acc,ag)=>{
+      const sc=sr.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0);
+      acc[ag.code]=sc.length?Math.max(...sc):0; return acc;
+    },{});
+    return { saison:s, bestTot, agBest, n:sr.length };
+  });
+
+  const saisonRows = saisonPerfs.map((sp,i)=>`
+    <tr class="${i%2===0?'even':''}">
+      <td class="b">${sp.saison}</td>
+      <td class="r b vg">${sp.bestTot>0?sp.bestTot.toFixed(2):'—'}</td>
+      ${AGRES.map(ag=>`<td class="r">${sp.agBest[ag.code]>0?sp.agBest[ag.code].toFixed(2):'—'}</td>`).join('')}
+      <td class="r sm">${sp.n}</td>
+    </tr>`).join('');
+
+  // ── HTML du PDF ────────────────────────────────────────────────────────
+  const html = `<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<title>Rapport - ${nom} ${prenom}</title>
+<style>
+@page{size:A4 portrait;margin:14mm 13mm 12mm}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;font-size:9pt;color:#1a1a2e;line-height:1.5}
+/* En-tête */
+.hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #003f8a;padding-bottom:10px;margin-bottom:18px}
+.hd-l .name{font-size:18pt;font-weight:900;color:#003f8a}
+.hd-l .sub{font-size:9pt;color:#444;margin-top:3px}
+.hd-l .meta{font-size:7.5pt;color:#888;margin-top:2px}
+.hd-r{text-align:right;font-size:7.5pt;color:#999;line-height:1.7}
+/* KPIs */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+.kpi{background:#f4f7fb;border-radius:7px;padding:9px 12px;border-top:3px solid #003f8a}
+.kpi .lbl{font-size:7pt;color:#777;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+.kpi .val{font-size:14pt;font-weight:900;color:#003f8a}
+.kpi .info{font-size:7pt;color:#666;margin-top:2px}
+/* Sections */
+.sec{margin-top:16px}
+.sec-h{font-size:10pt;font-weight:800;color:#003f8a;border-bottom:1.5px solid #c8d8ec;padding-bottom:4px;margin-bottom:8px}
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:8pt}
+td,th{overflow:hidden}
+thead th{background:#003f8a;color:#fff;font-weight:700;padding:5px 7px;text-align:left}
+thead th.r{text-align:right}
+tbody td{padding:4px 7px;border-bottom:1px solid #eaeef5;vertical-align:middle}
+tbody tr.even td{background:#f5f8fc}
+tbody tr:last-child td{border-bottom:2px solid #c8d8ec}
+.r{text-align:right}.b{font-weight:700}
+.sm{font-size:7pt;color:#666}
+.vg{color:#1a7a3a;font-weight:700}.vb{color:#003f8a;font-weight:700}
+.cat{background:#e8f0fe;color:#003f8a;padding:1px 7px;border-radius:8px;font-size:7pt;font-weight:700}
+/* Forces & faiblesses */
+.ff-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.ff-card{border-radius:7px;padding:9px 12px}
+.ff-card.strong{border-left:3px solid #1a7a3a;background:#f3fbf5}
+.ff-card.weak{border-left:3px solid #c62828;background:#fdf3f3}
+.ff-card .fc-lbl{font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.ff-card.strong .fc-lbl{color:#1a7a3a}.ff-card.weak .fc-lbl{color:#c62828}
+.ff-card .fc-val{font-size:13pt;font-weight:900}
+.ff-card.strong .fc-val{color:#1a7a3a}.ff-card.weak .fc-val{color:#c62828}
+.ff-card .fc-info{font-size:7pt;color:#666;margin-top:2px}
+/* Footer */
+.footer{margin-top:18px;padding-top:6px;border-top:1px solid #dde5f0;font-size:6.5pt;color:#bbb;text-align:center}
+.const-legend{font-size:6.5pt;color:#888;margin-top:5px;font-style:italic}
+.const-ok{color:#1a7a3a}.const-mid{color:#c97c00}.const-hi{color:#c62828}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.sec{page-break-inside:avoid}.pb{page-break-before:always}}
+</style></head><body>
+
+<!-- EN-TETE -->
+<div class="hd">
+  <div class="hd-l">
+    <div class="name">${nom.toUpperCase()}, ${prenom}</div>
+    <div class="sub">${clubs.join(' / ')} &nbsp;·&nbsp; ${cats.join(', ')} &nbsp;·&nbsp; ${groupes.join(', ')}</div>
+    <div class="meta">${saisons.join(' — ')} &nbsp;·&nbsp; ${totals.length} compétition${totals.length>1?'s':''}</div>
+  </div>
+  <div class="hd-r">Rapport généré le ${dateStr}<br>UFOLEP GAF Analytics</div>
+</div>
+
+<!-- KPIs -->
+<div class="kpis">
+  <div class="kpi">
+    <div class="lbl">Meilleur total</div>
+    <div class="val">${totals.length ? Math.max(...totals).toFixed(2) : '—'}</div>
+    <div class="info">toutes saisons</div>
+  </div>
+  <div class="kpi">
+    <div class="lbl">Moyenne totale</div>
+    <div class="val">${totals.length ? avg(totals).toFixed(2) : '—'}</div>
+    <div class="info">${totals.length} résultat${totals.length>1?'s':''}</div>
+  </div>
+  <div class="kpi">
+    <div class="lbl">Tendance</div>
+    <div class="val" style="font-size:11pt;color:${trendColor}">${trendTxt.split(' ')[0]}</div>
+    <div class="info">${trend !== null ? (trend >= 0 ? '+' : '') + trend.toFixed(2) + ' pts 1ère→dernière' : ''}</div>
+  </div>
+  <div class="kpi">
+    <div class="lbl">Saisons</div>
+    <div class="val" style="font-size:12pt">${saisons.length}</div>
+    <div class="info">${saisons[0]} → ${saisons[saisons.length-1]}</div>
+  </div>
+</div>
+
+<!-- GRAPHIQUE EVOLUTION -->
+${svgN >= 2 ? `<div class="sec">
+  <div class="sec-h">Évolution du total par compétition</div>
+  ${svgEl}
+</div>` : ''}
+
+<!-- PERFORMANCES PAR AGRES -->
+<div class="sec">
+  <div class="sec-h">Performances par agrès &nbsp;<span style="font-size:7pt;color:#888;font-weight:400">(moy. cat. = ${lastCat})</span></div>
+  <table>
+    <thead><tr>
+      <th>Agrès</th>
+      <th class="r">Meilleure</th>
+      <th class="r">Moy.</th>
+      <th class="r">Ecart moy.cat.</th>
+      <th class="r">Top cat.</th>
+      <th class="r">Ecart top</th>
+      <th class="r">Constance</th>
+    </tr></thead>
+    <tbody>${agresRows}</tbody>
+  </table>
+</div>
+
+  <p class="const-legend">Constance (écart-type) : <span class="const-ok">Très régulière</span> &lt; 0.4 pt &nbsp;|&nbsp; <span class="const-mid">Régulière</span> &lt; 0.9 pt &nbsp;|&nbsp; <span class="const-hi">Irrégulière</span> ≥ 0.9 pt</p>
+</div>
+
+<!-- MEILLEURES PERFORMANCES PAR SAISON -->
+${saisonRows ? `<div class="sec">
+  <div class="sec-h">Meilleures performances par saison</div>
+  <table>
+    <thead><tr>
+      <th>Saison</th><th class="r">Meilleur total</th>
+      ${AGRES.map(ag=>`<th class="r">${ag.code}</th>`).join('')}
+      <th class="r">Comp.</th>
+    </tr></thead>
+    <tbody>${saisonRows}</tbody>
+  </table>
+</div>` : ''}
+
+<!-- FORCES & FAIBLESSES -->
+<div class="sec">
+  <div class="sec-h">Forces &amp; Faiblesses</div>
+  <div class="ff-grid">
+    ${strongest.map(ag => `
+    <div class="ff-card strong">
+      <div class="fc-lbl">Point fort — ${ag.label}</div>
+      <div class="fc-val">${ag.avgScore.toFixed(2)}</div>
+      <div class="fc-info">moy. sur ${ag.n} passage${ag.n>1?'s':''} · meilleure : ${ag.best.toFixed(2)}</div>
+    </div>`).join('')}
+    ${weakest.map(ag => `
+    <div class="ff-card weak">
+      <div class="fc-lbl">A renforcer — ${ag.label}</div>
+      <div class="fc-val">${ag.avgScore.toFixed(2)}</div>
+      <div class="fc-info">moy. sur ${ag.n} passage${ag.n>1?'s':''} · meilleure : ${ag.best.toFixed(2)}</div>
+    </div>`).join('')}
+  </div>
+</div>
+
+<!-- DERNIÈRES COMPÉTITIONS -->
+<div class="pb"></div>
+<div class="sec">
+  <div class="sec-h">Dernières compétitions (${lastComps.length})</div>
+  <table style="table-layout:fixed">
+    <colgroup>
+      <col style="width:70px">
+      <col><!-- Compétition prend le reste -->
+      <col style="width:92px">
+      <col style="width:50px">
+      ${AGRES.map(()=>`<col style="width:42px">`).join('')}
+    </colgroup>
+    <thead><tr>
+      <th>Date</th><th>Compétition</th><th>Catégorie</th>
+      <th class="r">Total</th>
+      ${AGRES.map(ag => `<th class="r">${ag.code}</th>`).join('')}
+    </tr></thead>
+    <tbody>${compsRows}</tbody>
+  </table>
+</div>
+
+<div class="footer">UFOLEP GAF Analytics &nbsp;·&nbsp; Rapport de ${prenom} ${nom} &nbsp;·&nbsp; ${dateStr}</div>
+</body></html>`;
+
+  const w = window.open('', '_blank', 'width=920,height=720');
+  if (w) {
+    w.document.open(); w.document.write(html); w.document.close();
+    w.onload = () => w.print();
+  } else {
+    alert('Activez les popups pour générer le PDF, puis Ctrl+P dans la nouvelle fenêtre.');
+  }
+}
+
 function renderGymnastesFiche() {
   const { nom, prenom } = state.currentGymnaste;
   // Utilise findGymnResults pour regrouper les doublons de casse/accents
@@ -5201,6 +5591,15 @@ function renderGymnastesFiche() {
           <span class="tag">📈 Moy. totaux : ${fmt(avg(totalScores))}</span>
         </div>
       </div>
+      ${gymResults.length ? `
+      <button onclick="_exportGymPDF('${nom.replace(/'/g,"\'")}','${prenom.replace(/'/g,"\'")}' )"
+        title="Télécharger le rapport PDF de la gymnaste"
+        style="align-self:flex-start;margin-left:auto;padding:8px 16px;border-radius:8px;
+               border:1.5px solid var(--c-border);background:var(--c-surface2);
+               color:var(--c-text);font-size:12px;font-weight:600;cursor:pointer;
+               display:flex;align-items:center;gap:6px;white-space:nowrap">
+        📄 Rapport PDF
+      </button>` : ''}
     </div>
 
     <div class="agres-grid">${agresCards}</div>
@@ -8698,6 +9097,506 @@ function renderIntraClub() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// SÉLECTION D'ÉQUIPE — v2.2.0
+// Outil coach : composer une équipe en regroupant catégories A/B/C
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Extrait le niveau de base d'une catégorie en supprimant le suffixe A/B/C.
+ * Ex: "N7 7-10 A" → "N7 7-10" | "GAF N6 11-14 B" → "GAF N6 11-14"
+ */
+function getNiveau(categorie) {
+  return (categorie || '').replace(/\s+[A-Z]$/, '').trim();
+}
+
+/**
+ * Export PDF de la sélection d'équipe.
+ * Utilise window.open() + window.print() — UTF-8 natif, zéro dépendance externe.
+ */
+function _exportSeEquipePDF() {
+  const seGymns = state.seGymns || [];
+  if (!seGymns.length) return;
+
+  const selSaison = state.seSaison;
+  const selClub   = state.seClub;
+  const selNiveau = state.seNiveau;
+  const now       = new Date();
+  const dateStr   = now.toLocaleDateString('fr-FR', {day:'2-digit', month:'long', year:'numeric'});
+  const SE_PALETTE= ['#1565c0','#c62828','#2e7d32','#e65100','#6a1b9a','#00838f'];
+
+  // Reconstituer les données des gymnastes sélectionnées
+  const niveauResults = state.results.filter(r =>
+    r.saison === selSaison &&
+    normalizeClub(r.club) === selClub &&
+    getNiveau(r.categorie) === selNiveau &&
+    r.total > 0
+  );
+
+  const gymnsMap = new Map();
+  niveauResults.forEach(r => {
+    const k = gymKey(r.nom, r.prenom);
+    if (!gymnsMap.has(k)) gymnsMap.set(k, { key:k, nom:r.nom, prenom:r.prenom, cats:new Set(), results:[] });
+    const g = gymnsMap.get(k);
+    g.cats.add(r.categorie);
+    g.results.push(r);
+  });
+
+  const allGymns = [...gymnsMap.values()].map(g => {
+    const totals = g.results.map(r => r.total).filter(v => v > 0);
+    const agres  = {};
+    AGRES.forEach(ag => {
+      const sc = g.results.map(r => r.agres?.[ag.code]?.final || 0).filter(v => v > 0);
+      agres[ag.code] = sc.length ? avg(sc) : 0;
+    });
+    return { ...g, cats:[...g.cats].join(', '), bestTotal:totals.length?Math.max(...totals):0, agres };
+  });
+
+  const selectedData = seGymns.map(k => allGymns.find(g => g.key === k)).filter(Boolean);
+  if (!selectedData.length) return;
+
+  // Calcul des stats par agrès
+  const agresStats = AGRES.map(ag => {
+    const withVal = selectedData.filter(g => g.agres[ag.code] > 0);
+    if (!withVal.length) return { ...ag, best:null, worst:null, teamAvg:0, ecart:0 };
+    const best    = withVal.reduce((b, g) => g.agres[ag.code] > b.agres[ag.code] ? g : b);
+    const worst   = withVal.reduce((w, g) => g.agres[ag.code] < w.agres[ag.code] ? g : w);
+    return { ...ag, best, worst, teamAvg:avg(withVal.map(g=>g.agres[ag.code])), ecart:best.agres[ag.code]-worst.agres[ag.code] };
+  });
+  const teamBestTotal = Math.max(...selectedData.map(g => g.bestTotal));
+
+  // ── Génération HTML ────────────────────────────────────────────────────
+  const gymnsListHtml = selectedData.map((g, i) => `
+    <tr class="${i%2===0?'even':''}">
+      <td class="center bold" style="color:${SE_PALETTE[i]}">${i+1}</td>
+      <td class="bold">${g.prenom} ${g.nom}</td>
+      <td><span class="cat-badge">${g.cats}</span></td>
+      <td class="right bold">${g.bestTotal.toFixed(2)}</td>
+      ${AGRES.map(ag=>`<td class="right">${g.agres[ag.code]>0?g.agres[ag.code].toFixed(2):'—'}</td>`).join('')}
+    </tr>`).join('');
+
+  const agresTableHtml = agresStats.map(ag => `
+    <tr>
+      <td class="bold">${ag.icon} ${ag.label} (${ag.code})</td>
+      <td class="right green bold">${ag.best?ag.best.agres[ag.code].toFixed(2):'—'}</td>
+      <td class="small">${ag.best?`${ag.best.prenom} ${ag.best.nom}`:''}</td>
+      <td class="right blue bold">${ag.teamAvg>0?ag.teamAvg.toFixed(2):'—'}</td>
+      <td class="right">${ag.worst&&!( ag.best&&ag.worst.key===ag.best.key)?ag.worst.agres[ag.code].toFixed(2):'—'}</td>
+      <td class="small">${ag.worst&&!(ag.best&&ag.worst.key===ag.best.key)?`${ag.worst.prenom} ${ag.worst.nom}`:''}</td>
+      <td class="right ${ag.ecart>=1.2?'red':ag.ecart>=0.5?'orange':'green'} bold">${ag.ecart>0?'+'+ag.ecart.toFixed(2):'—'}</td>
+    </tr>`).join('');
+
+  // Titre propre pour la fenêtre d'impression
+  const pdfTitle = `Composition d'équipe - ${selNiveau} - ${selClub} - ${selSaison}`;
+
+  const html = `<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<title>${pdfTitle}</title>
+<style>
+@page{size:A4 portrait;margin:15mm 13mm 12mm}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;font-size:9.5pt;color:#1a1a2e;line-height:1.5}
+/* En-tête */
+.hd{border-bottom:3px solid #003f8a;padding-bottom:10px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-end}
+.hd-l .club{font-size:16pt;font-weight:900;color:#003f8a}
+.hd-l .titre{font-size:11pt;font-weight:700;color:#1a1a2e;margin-top:3px}
+.hd-l .meta{font-size:8pt;color:#777;margin-top:2px}
+.hd-r{text-align:right;font-size:7.5pt;color:#999;line-height:1.6}
+.sbadge{display:inline-block;background:#003f8a;color:#fff;font-size:8pt;font-weight:700;padding:2px 9px;border-radius:10px}
+/* Sections */
+.sec{margin-top:18px}
+.sec-h{font-size:10.5pt;font-weight:800;color:#003f8a;border-bottom:1.5px solid #c8d8ec;padding-bottom:4px;margin-bottom:9px}
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:8.5pt}
+thead th{background:#003f8a;color:#fff;font-weight:700;padding:6px 8px;text-align:left}
+thead th.r{text-align:right}thead th.c{text-align:center}
+tbody td{padding:5px 8px;border-bottom:1px solid #e8eef5;vertical-align:middle}
+tbody tr:nth-child(even) td{background:#f4f7fb}
+tbody tr:last-child td{border-bottom:2px solid #c8d8ec}
+.r{text-align:right}.c{text-align:center}.b{font-weight:700}
+.sm{font-size:7.5pt;color:#666}
+.cat{display:inline-block;background:#e8f0fe;color:#003f8a;padding:1px 7px;border-radius:9px;font-size:7.5pt;font-weight:700}
+.vg{color:#1a7a3a;font-weight:700}.vb{color:#003f8a;font-weight:700}
+.ecart{display:inline-block;padding:1px 8px;border-radius:9px;font-size:7.5pt;font-weight:800;min-width:42px;text-align:center}
+.e-ok{background:#e8f5e9;color:#1a7a3a}.e-mid{background:#fff8e1;color:#c97c00}.e-hi{background:#fdecea;color:#c62828}
+/* Total */
+.total{margin-top:16px;border:1.5px solid #1a7a3a;border-radius:6px;padding:10px 16px;display:flex;align-items:center;gap:18px;background:#f3fbf5}
+.total .big{font-size:22pt;font-weight:900;color:#1a7a3a;line-height:1}
+.total .inf{font-size:8pt;color:#555}.total .inf strong{font-size:9pt;color:#1a1a2e;display:block;margin-bottom:2px}
+/* Footer */
+.footer{margin-top:20px;padding-top:7px;border-top:1px solid #dde5f0;font-size:7pt;color:#bbb;text-align:center}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.sec{page-break-inside:avoid}.pb{page-break-before:always}}
+</style></head><body>
+
+<div class="hd">
+  <div class="hd-l">
+    <div class="club">${selClub}</div>
+    <div class="titre">Composition d'équipe — ${selNiveau} &nbsp;<span class="sbadge">${selSaison}</span></div>
+    <div class="meta">${selectedData.length} gymnaste${selectedData.length>1?'s':''} sélectionnée${selectedData.length>1?'s':''}</div>
+  </div>
+  <div class="hd-r">Généré le ${dateStr}<br>UFOLEP GAF Analytics</div>
+</div>
+
+<div class="sec">
+  <div class="sec-h">Gymnastes sélectionnées</div>
+  <table>
+    <thead><tr>
+      <th class="c" style="width:26px">#</th><th>Nom, Prénom</th><th>Catégorie</th>
+      <th class="r">Meilleur total</th>${AGRES.map(ag=>`<th class="r">${ag.code}</th>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${selectedData.map((g,i)=>`<tr>
+        <td class="c b" style="color:${SE_PALETTE[i]}">${i+1}</td>
+        <td class="b">${g.nom.toUpperCase()}, ${g.prenom}</td>
+        <td><span class="cat">${g.cats}</span></td>
+        <td class="r b vg">${g.bestTotal.toFixed(2)}</td>
+        ${AGRES.map(ag=>`<td class="r">${g.agres[ag.code]>0?g.agres[ag.code].toFixed(2):'—'}</td>`).join('')}
+      </tr>`).join('')}
+    </tbody>
+  </table>
+</div>
+
+<div class="sec">
+  <div class="sec-h">Analyse par agrès</div>
+  <table>
+    <thead><tr>
+      <th>Agrès</th><th class="r">Meilleure note</th><th>Gymnaste</th>
+      <th class="r">Moy. équipe</th><th class="r">Plus faible</th><th>Gymnaste</th><th class="r">Écart</th>
+    </tr></thead>
+    <tbody>
+      ${agresStats.map(ag=>{
+        if(!ag.best)return`<tr><td class="b">${ag.label} (${ag.code})</td><td colspan="6" class="sm" style="color:#aaa">Aucune note</td></tr>`;
+        const sameG=ag.best.key===ag.worst.key;
+        const eCls=ag.ecart<0.5?'e-ok':ag.ecart<1.2?'e-mid':'e-hi';
+        return`<tr>
+          <td class="b">${ag.label} <span class="sm" style="color:#888">(${ag.code})</span></td>
+          <td class="r vg">${ag.best.agres[ag.code].toFixed(2)}</td>
+          <td class="sm">${ag.best.nom}, ${ag.best.prenom}</td>
+          <td class="r vb">${ag.teamAvg.toFixed(2)}</td>
+          <td class="r">${sameG?'—':ag.worst.agres[ag.code].toFixed(2)}</td>
+          <td class="sm">${sameG?'':ag.worst.nom+', '+ag.worst.prenom}</td>
+          <td class="r"><span class="ecart ${eCls}">${ag.ecart>0?'+'+ag.ecart.toFixed(2):'—'}</span></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>
+</div>
+
+<div class="total">
+  <div class="big">${teamBestTotal.toFixed(2)}</div>
+  <div class="inf"><strong>Meilleur total de l'équipe</strong>${selectedData.length} gymnaste${selectedData.length>1?'s':''} | ${selNiveau} | ${selClub}</div>
+</div>
+
+<div class="footer">UFOLEP GAF Analytics &nbsp;·&nbsp; ${dateStr}</div>
+</body></html>`;
+  const w = window.open('', '_blank', 'width=920,height=720');
+  if (w) {
+    w.document.open(); w.document.write(html); w.document.close();
+    w.onload = () => w.print();
+  } else {
+    alert('Activez les popups pour générer le PDF, puis Ctrl+P dans la nouvelle fenêtre.');
+  }
+}
+
+function renderSelectionEquipe() {
+  if (!state.results.length) return emptyState('Aucune donnée', 'Importez des données pour commencer.');
+
+  const SEL = 'font-size:13px;padding:5px 10px;border-radius:8px;border:1px solid var(--c-border);background:var(--c-surface);color:var(--c-text)';
+  const SE_PALETTE = ['#1565c0','#c62828','#2e7d32','#e65100','#6a1b9a','#00838f'];
+
+  // ── Données de référence ─────────────────────────────────────────────
+  const allSaisons = [...new Set(state.results.map(r => r.saison))].sort().reverse();
+  const defaultSaison = allSaisons[0] || '';  // saison la plus récente par défaut
+  const selSaison = state.seSaison || defaultSaison;
+  if (!state.seSaison) state.seSaison = selSaison;
+
+  const saisonResults = state.results.filter(r => r.saison === selSaison);
+
+  // Groupe (optionnel)
+  const allGroupes = [...new Set(saisonResults.map(r => r.groupe).filter(Boolean))].sort();
+  const selGroupe  = state.seGroupe && allGroupes.includes(state.seGroupe) ? state.seGroupe : '';
+  if (state.seGroupe !== selGroupe) state.seGroupe = selGroupe;
+
+  const groupeResults = selGroupe
+    ? saisonResults.filter(r => r.groupe === selGroupe)
+    : saisonResults;
+
+  const allClubs = [...new Set(groupeResults.map(r => normalizeClub(r.club)).filter(Boolean))].sort();
+  const selClub  = state.seClub && allClubs.includes(state.seClub) ? state.seClub : (allClubs[0] || '');
+  if (state.seClub !== selClub) { state.seClub = selClub; }
+
+  // Niveaux disponibles pour ce club (regroupement A/B/C)
+  const clubResults = groupeResults.filter(r => normalizeClub(r.club) === selClub);
+  const allNiveaux  = [...new Set(clubResults.map(r => getNiveau(r.categorie)).filter(Boolean))].sort();
+  const selNiveau   = state.seNiveau && allNiveaux.includes(state.seNiveau) ? state.seNiveau : (allNiveaux[0] || '');
+  if (state.seNiveau !== selNiveau) state.seNiveau = selNiveau;
+
+  // Recherche gymnaste
+  const seSearch = state.seSearch || '';
+
+  // Gymnastes du club pour ce niveau (toutes catégories A/B/C confondues)
+  const niveauResults = clubResults.filter(r => getNiveau(r.categorie) === selNiveau && r.total > 0);
+  const seGymns = (state.seGymns || []).filter(k => {
+    const gymnsKeys = [...new Set(niveauResults.map(r => gymKey(r.nom, r.prenom)))];
+    return gymnsKeys.includes(k);
+  });
+
+  // ── Filtres ──────────────────────────────────────────────────────────
+  const totalGymns = [...new Set(niveauResults.map(r => gymKey(r.nom, r.prenom)))].length;
+  const LABEL = 'font-size:11px;font-weight:700;color:var(--c-text3);text-transform:uppercase;letter-spacing:.5px';
+  const filtersHtml = `
+    <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:20px;
+                padding:16px 18px;background:var(--c-surface2);border-radius:12px;border:1px solid var(--c-border)">
+      <div class="filter-group">
+        <label style="${LABEL}">Saison</label>
+        <select style="${SEL}" onchange="state.seSaison=this.value;state.seGroupe='';state.seClub='';state.seNiveau='';state.seGymns=[];renderPage()">
+          ${allSaisons.map(s => `<option value="${s}" ${s===selSaison?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      ${allGroupes.length > 1 ? `
+      <div class="filter-group">
+        <label style="${LABEL}">Groupe</label>
+        <select style="${SEL}" onchange="state.seGroupe=this.value;state.seClub='';state.seNiveau='';state.seGymns=[];renderPage()">
+          <option value="">Tous</option>
+          ${allGroupes.map(g => `<option value="${g}" ${g===selGroupe?'selected':''}>${g}${GROUPES[g]?' — '+GROUPES[g]:''}</option>`).join('')}
+        </select>
+      </div>` : ''}
+      <div class="filter-group">
+        <label style="${LABEL}">Club <span style="color:var(--c-red)">*</span></label>
+        <select style="${SEL}" onchange="state.seClub=this.value;state.seNiveau='';state.seGymns=[];renderPage()">
+          ${allClubs.map(c => `<option value="${c}" ${c===selClub?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label style="${LABEL}">Niveau <span style="color:var(--c-red)">*</span></label>
+        <select style="${SEL}" onchange="state.seNiveau=this.value;state.seGymns=[];renderPage()">
+          ${allNiveaux.map(n => `<option value="${n}" ${n===selNiveau?'selected':''}>${n}</option>`).join('')}
+        </select>
+      </div>
+      <div class="filter-group" style="flex:1;min-width:160px">
+        <label style="${LABEL}">Recherche</label>
+        <!-- Debounce via bindPageEvents() — id=se-search -->
+        <div style="position:relative">
+          <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--c-text3)">🔍</span>
+          <input type="search" id="se-search" placeholder="Rechercher un gymnaste…"
+            value="${seSearch}"
+            style="padding:5px 9px 5px 27px;border-radius:8px;border:1px solid var(--c-border);
+                   background:var(--c-surface2);color:var(--c-text);font-size:13px;width:100%;box-sizing:border-box">
+        </div>
+      </div>
+      <div style="margin-left:auto;font-size:12px;color:var(--c-text3);align-self:center;white-space:nowrap">
+        ${totalGymns > 0 ? `${totalGymns} gymnaste${totalGymns>1?'s':''} disponibles` : ''}
+      </div>
+    </div>`;
+
+  // ── Pas de données ───────────────────────────────────────────────────
+  if (!selNiveau || !niveauResults.length) {
+    return `
+    <div class="section-title">📋 Sélection d'équipe</div>
+    <div class="section-sub">Composez votre équipe en regroupant toutes les sous-catégories d'un niveau</div>
+    ${filtersHtml}
+    <div style="padding:32px;text-align:center;background:var(--c-surface2);border-radius:12px;color:var(--c-text3)">
+      <div style="font-size:28px;margin-bottom:10px">📋</div>
+      <strong>Aucune gymnaste pour ce niveau</strong><br>
+      <span style="font-size:13px">Choisissez un autre niveau ou une autre saison.</span>
+    </div>`;
+  }
+
+  // ── Calculer le résumé de chaque gymnaste ────────────────────────────
+  const gymnsMap = new Map();
+  niveauResults.forEach(r => {
+    const k = gymKey(r.nom, r.prenom);
+    if (!gymnsMap.has(k)) gymnsMap.set(k, { key:k, nom:r.nom, prenom:r.prenom, cats:new Set(), results:[] });
+    const g = gymnsMap.get(k);
+    g.cats.add(r.categorie);
+    g.results.push(r);
+  });
+
+  // Filtre recherche (insensible à la casse, appliqué avant le tri)
+  const searchLower = seSearch.toLowerCase().trim();
+
+  const allGymns = [...gymnsMap.values()].map(g => {
+    const totals = g.results.map(r => r.total).filter(v => v > 0);
+    const agres  = {};
+    AGRES.forEach(ag => {
+      const sc = g.results.map(r => r.agres?.[ag.code]?.final || 0).filter(v => v > 0);
+      agres[ag.code] = sc.length ? avg(sc) : 0;
+    });
+    return {
+      ...g,
+      cats: [...g.cats].join(', '),
+      bestTotal: totals.length ? Math.max(...totals) : 0,
+      avgTotal:  totals.length ? avg(totals) : 0,
+      agres, n: g.results.length
+    };
+  }).sort((a, b) => b.bestTotal - a.bestTotal)
+    .filter(g => !searchLower || `${g.prenom} ${g.nom}`.toLowerCase().includes(searchLower));
+
+  // ── Liste de sélection ───────────────────────────────────────────────
+  const listRows = allGymns.map((g, i) => {
+    const isSelected = seGymns.includes(g.key);
+    const slotIdx    = seGymns.indexOf(g.key);
+    const disabled   = !isSelected && seGymns.length >= 6;
+    const safe       = g.key.replace(/'/g, "\'");
+    const onclick    = disabled ? '' :
+      `(function(){var a=[...state.seGymns];var i=a.indexOf('${safe}');if(i>=0)a.splice(i,1);else a.push('${safe}');state.seGymns=a;renderPage();})()`;
+    const rowBg      = isSelected ? SE_PALETTE[slotIdx] + '12' : '';
+    return `<tr style="cursor:${disabled?'default':'pointer'};opacity:${disabled?'.4':'1'};background:${rowBg}"
+               onclick="${onclick}">
+      <td style="text-align:center;width:36px">
+        ${isSelected
+          ? `<div style="width:22px;height:22px;border-radius:50%;background:${SE_PALETTE[slotIdx]};color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;margin:auto">${slotIdx+1}</div>`
+          : `<div style="width:22px;height:22px;border-radius:50%;border:2px solid var(--c-border);margin:auto"></div>`}
+      </td>
+      <td style="font-weight:600;color:${isSelected?SE_PALETTE[slotIdx]:'var(--c-text)'}">
+        ${g.prenom} ${g.nom}
+      </td>
+      <td><span style="font-size:11px;background:var(--c-surface2);padding:2px 8px;border-radius:10px">${g.cats}</span></td>
+      <td><strong class="${noteColor(g.bestTotal, 60)}">${g.bestTotal.toFixed(2)}</strong></td>
+      <td class="${noteColor(g.avgTotal, 60)}">${g.avgTotal.toFixed(2)}</td>
+      ${AGRES.map(ag => `<td class="${noteColor(g.agres[ag.code]||0)}">${g.agres[ag.code]>0?g.agres[ag.code].toFixed(2):'—'}</td>`).join('')}
+      <td style="font-size:11px;color:var(--c-text3)">${g.n}</td>
+    </tr>`;
+  }).join('');
+
+  // ── Résumé de l'équipe sélectionnée ─────────────────────────────────
+  const selectedData = seGymns.map(k => allGymns.find(g => g.key === k)).filter(Boolean);
+  const teamSummary  = seGymns.length >= 1 ? (() => {
+    // Calcul enrichi par agrès : meilleure, moyenne, plus faible, écart
+    const agresStats = AGRES.map(ag => {
+      const withVal = selectedData.filter(g => g.agres[ag.code] > 0);
+      if (!withVal.length) return { ...ag, best:null, worst:null, teamAvg:0, ecart:0 };
+      const best  = withVal.reduce((b, g) => g.agres[ag.code] > b.agres[ag.code] ? g : b);
+      const worst = withVal.reduce((w, g) => g.agres[ag.code] < w.agres[ag.code] ? g : w);
+      const teamAvg = avg(withVal.map(g => g.agres[ag.code]));
+      const ecart   = best.agres[ag.code] - worst.agres[ag.code];
+      return { ...ag, best, worst, teamAvg, ecart, withVal };
+    });
+    const teamBestTotal = Math.max(...selectedData.map(g => g.bestTotal));
+
+    // Pastilles gymnastes sélectionnées
+    const pills = seGymns.map((k, i) => {
+      const g = allGymns.find(x => x.key === k);
+      if (!g) return '';
+      return `<div style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;
+                   border-radius:20px;background:${SE_PALETTE[i]};color:#fff;font-size:12px;font-weight:700;cursor:pointer"
+                   onclick="(function(){var a=[...state.seGymns];a.splice(${i},1);state.seGymns=a;renderPage();})()">
+        ${i+1}. ${g.prenom} ${g.nom} <span style="opacity:.75">✕</span>
+      </div>`;
+    }).join('');
+
+    // Cartes détaillées par agrès
+    const agresCards = agresStats.map(a => {
+      if (!a.best) return `
+        <div style="background:var(--c-surface2);border-radius:12px;padding:14px 16px;opacity:.5">
+          <div style="font-size:13px;font-weight:700;margin-bottom:8px">${a.icon} ${a.label}</div>
+          <div style="font-size:12px;color:var(--c-text3)">Aucune note</div>
+        </div>`;
+      // Couleur de l'écart : vert si faible (équipe homogène), orange/rouge si grand
+      const ecartColor = a.ecart < 0.5 ? 'var(--c-green)' : a.ecart < 1.2 ? 'var(--c-gold)' : 'var(--c-red)';
+      const sameGymn  = a.best.key === a.worst.key;
+      return `
+        <div style="background:var(--c-surface2);border-radius:12px;padding:14px 16px;border-top:3px solid var(--c-blue)">
+          <div style="font-size:13px;font-weight:800;margin-bottom:12px;color:var(--c-blue)">${a.icon} ${a.label}</div>
+
+          <!-- Meilleure note -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span style="font-size:10px;font-weight:600;color:var(--c-text3);text-transform:uppercase;letter-spacing:.4px">🏅 Meilleure</span>
+            <span style="font-size:16px;font-weight:900;color:var(--c-green)">${a.best.agres[a.code].toFixed(2)}</span>
+          </div>
+          <div style="font-size:10px;color:var(--c-text3);margin-bottom:10px;text-align:right">
+            ${a.best.prenom} ${a.best.nom}
+          </div>
+
+          <!-- Moyenne -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;
+                      padding:6px 8px;background:var(--c-surface);border-radius:6px">
+            <span style="font-size:10px;font-weight:600;color:var(--c-text3);text-transform:uppercase;letter-spacing:.4px">⚖️ Moyenne</span>
+            <span style="font-size:15px;font-weight:800;color:var(--c-blue)">${a.teamAvg.toFixed(2)}</span>
+          </div>
+
+          <!-- Plus faible -->
+          ${sameGymn ? '' : `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="font-size:10px;font-weight:600;color:var(--c-text3);text-transform:uppercase;letter-spacing:.4px">📉 Plus faible</span>
+            <span style="font-size:14px;font-weight:700;color:var(--c-text2)">${a.worst.agres[a.code].toFixed(2)}</span>
+          </div>
+          <div style="font-size:10px;color:var(--c-text3);margin-bottom:10px;text-align:right">
+            ${a.worst.prenom} ${a.worst.nom}
+          </div>
+
+          <!-- Écart -->
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;
+                      border-radius:6px;background:${ecartColor}18;border:1px solid ${ecartColor}44">
+            <span style="font-size:10px;font-weight:600;color:var(--c-text3)">📐 Écart</span>
+            <span style="font-size:13px;font-weight:800;color:${ecartColor}">+${a.ecart.toFixed(2)} pts</span>
+          </div>`}
+        </div>`;
+    }).join('');
+
+    return `
+    <div class="card" style="margin-bottom:20px;border-left:4px solid var(--c-blue)">
+      <div class="card-header">
+        <span>📋</span>
+        <h2>Équipe sélectionnée — ${seGymns.length}/6 gymnaste${seGymns.length>1?'s':''}</h2>
+        <button class="btn btn-outline btn-sm" style="font-size:11px"
+          onclick="_exportSeEquipePDF()"
+          title="Exporter la sélection en PDF">
+          📄 Exporter PDF
+        </button>
+        <button class="btn btn-outline btn-sm" style="margin-left:6px;font-size:11px"
+          onclick="state.seGymns=[];renderPage()">✕ Reset</button>
+      </div>
+      <div class="card-body">
+        <!-- Pastilles -->
+        <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px">${pills}</div>
+
+        <!-- Cartes par agrès -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:14px;margin-bottom:14px">
+          ${agresCards}
+        </div>
+
+        <!-- Meilleur total équipe -->
+        <div style="padding:10px 16px;background:rgba(24,160,88,.08);border-radius:10px;
+                    border:1px solid rgba(24,160,88,.3);display:flex;align-items:center;gap:12px">
+          <span style="font-size:20px">🏆</span>
+          <div>
+            <div style="font-size:11px;font-weight:600;color:var(--c-text3);text-transform:uppercase;letter-spacing:.4px">Meilleur total — équipe</div>
+            <div style="font-size:22px;font-weight:900;color:var(--c-green)">${teamBestTotal.toFixed(2)}</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  })() : '';
+
+  return `
+    <div class="section-title">📋 Sélection d'équipe</div>
+    <div class="section-sub">Composez votre équipe — les catégories A/B/C sont regroupées par niveau</div>
+    ${filtersHtml}
+    ${teamSummary}
+    <div class="card">
+      <div class="card-header">
+        <span>👥</span>
+        <h2>Gymnastes disponibles — ${selNiveau} · ${selClub} · ${selSaison}</h2>
+        <span style="margin-left:auto;font-size:12px;color:var(--c-text3)">
+          ${seGymns.length}/6 sélectionnées · cliquez pour sélectionner
+        </span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th></th><th>Gymnaste</th><th>Catégorie</th>
+          <th>Meilleur total</th><th>Moy. total</th>
+          ${AGRES.map(ag => `<th>${ag.icon} ${ag.code}</th>`).join('')}
+          <th>Rés.</th>
+        </tr></thead>
+        <tbody>${listRows}</tbody>
+      </table></div>
+      ${seGymns.length >= 6 ? `<p style="font-size:12px;color:var(--c-gold);font-weight:600;margin:10px 14px">
+        ⚠ Maximum 6 gymnastes atteint.</p>` : ''}
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // HELPERS — COMPARAISON D'ÉQUIPES
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -11106,7 +12005,126 @@ function showAbout() {
 
         ${[
           {
-            ver: '2.1.7', date: '15 mai 2026', current: true,
+            ver: '2.2.11', date: '16 mai 2026', current: true,
+            items: [
+              'PDF gymnaste : tableau Dernières compétitions — colgroup avec largeurs explicites (Date 70px, Catégorie 92px, Total 50px, agrès 42px, Compétition = reste)',
+              'Wrapping du texte activé dans la colonne Compétition (word-break:break-word) — fini les "Demi Finales…"',
+              'Police 7.5pt sur les noms de compétitions pour maximiser la lisibilité sans débordement',
+              'table-layout:fixed retiré du CSS global, appliqué uniquement sur le tableau des comps',
+              'Passage en version v2.2.11',
+            ]
+          },
+          {
+            ver: '2.2.10', date: '15 mai 2026', current: false,
+            items: [
+              'PDF gymnaste : seuils constance recalibrés pour la GAF (< 0.4 pt = Très régulière, < 0.9 pt = Régulière)',
+              'Légende constance sous le tableau agrès pour contextualiser les niveaux',
+              'SVG graphique : marge Y ±0.8 pt (plus serrée), hauteur 180px, points plus grands (4px/3px)',
+              'Labels X rotatifs -35° pour éviter les chevauchements de dates',
+              'Légende SVG déplacée en haut, compacte sur une ligne',
+              'Noms de compétitions : ellipsis natif CSS + title tooltip (texte complet au survol)',
+              'table-layout:fixed + overflow:hidden — colonnes stables, plus de débordement',
+              'Passage en version v2.2.10',
+            ]
+          },
+          {
+            ver: '2.2.9', date: '15 mai 2026', current: false,
+            items: [
+              'Rapport PDF gymnaste : graphique multi-lignes — Total (bleu plein) + 4 agrès (pointillés colorés) avec légende',
+              'Colonne "Top catégorie" et écart vs top dans le tableau performances par agrès',
+              'Indicateur de constance par agrès : écart-type → Tres reguliere / Reguliere / Irreguliere avec couleur',
+              'Nouvelle section "Meilleures performances par saison" (meilleur total + agrès par saison)',
+              'Saut de page avant la section Dernières compétitions pour une mise en page 2 pages propre',
+              'Passage en version v2.2.9',
+            ]
+          },
+          {
+            ver: '2.2.8', date: '15 mai 2026', current: false,
+            items: [
+              'Rapport PDF gymnaste : graphique SVG d\'évolution du total par compétition (ligne + aire + points)',
+              'Tableau performances par agrès : 2 nouvelles colonnes — Écart vs moy. catégorie (vert/rouge) et Moy. catégorie',
+              'Calcul automatique de la moyenne catégorie depuis les données disponibles',
+              'Graphique SVG généré directement en JS, rendu natif dans le PDF (pas de canvas ni jsPDF)',
+              'Passage en version v2.2.8',
+            ]
+          },
+          {
+            ver: '2.2.7', date: '15 mai 2026', current: false,
+            items: [
+              '🆕 Rapport PDF gymnaste : bouton "📄 Rapport PDF" dans la fiche gymnaste (visible si résultats)',
+              'Contenu : en-tête (nom/club/catégorie/groupe/saisons), 4 KPIs (meilleur total, moy., tendance, nb saisons)',
+              'Tableau performances par agrès : meilleure note + compétition, moy., passages',
+              'Section Forces & Faiblesses : 2 points forts + 2 à renforcer en cartes colorées',
+              'Tableau des 8 dernières compétitions avec notes par agrès',
+              'Même approche technique que les autres exports (window.print, UTF-8 natif)',
+              'Passage en version v2.2.7',
+            ]
+          },
+          {
+            ver: '2.2.6', date: '15 mai 2026', current: false,
+            items: [
+              'PDF Sélection d\'équipe : titre propre via pdfTitle sans emoji (compatible avec le dialogue d\'impression)',
+              'En-tête refactorisé : club + titre + saison côte à côte, date/application à droite — sans redondance',
+              'Noms en NOM, Prénom (majuscule) pour une lecture rapide dans les tableaux',
+              'Tableau agrès : suppression des emojis dans les en-têtes pour un rendu sobre, badges écart arrondis',
+              'Footer simplifié : application + date uniquement',
+              'CSS refactorisé : classes .vgreen/.vblue/.e-ok/.e-mid/.e-hi plus propres',
+              'Passage en version v2.2.6',
+            ]
+          },
+          {
+            ver: '2.2.5', date: '15 mai 2026', current: false,
+            items: [
+              'Export PDF : refonte complète de la mise en page — en-tête structuré avec club, niveau, saison et date bien séparés',
+              'Titre principal "Composition d\'équipe — [Niveau]" avec badge saison intégré',
+              'Sections aérées avec icônes, badges colorés pour l\'écart (vert/orange/rouge)',
+              'Bannière total équipe avec dégradé vert, pied de page 3 colonnes',
+              'Saison la plus récente par défaut dans le filtre (v2.2.4)',
+              'Passage en version v2.2.5',
+            ]
+          },
+          {
+            ver: '2.2.3', date: '15 mai 2026', current: false,
+            items: [
+              'Sélection d\'équipe : bouton "📄 Exporter PDF" visible dès qu\'une gymnaste est sélectionnée',
+              '_exportSeEquipePDF() : export HTML→PDF via window.open/print (UTF-8 natif, zéro dépendance)',
+              'PDF contient : en-tête club/niveau/saison, liste numérotée des gymnastes avec notes, tableau analyse par agrès (meilleure/moy./plus faible/écart coloré), meilleur total équipe, pied de page',
+              'Nom de fichier : Equipe_[Niveau]_[Club]_[Saison].pdf via titre de la fenêtre',
+              'Passage en version v2.2.3',
+            ]
+          },
+          {
+            ver: '2.2.2', date: '15 mai 2026', current: false,
+            items: [
+              'Sélection d\'équipe : filtre Groupe ajouté (optionnel, "Tous" par défaut) — affiche G1/G2/G3/G4/GN avec nom complet',
+              'Champ de recherche gymnaste avec debounce via bindPageEvents (id=se-search, 280ms)',
+              'Filtre recherche insensible à la casse, appliqué après tri par meilleur total',
+              'Passage en version v2.2.2',
+            ]
+          },
+          {
+            ver: '2.2.1', date: '15 mai 2026', current: false,
+            items: [
+              'Sélection d\'équipe : résumé par agrès enrichi — meilleure note (gymnaste), moyenne équipe, plus faible note (gymnaste), écart min-max',
+              'Écart coloré : vert si < 0.5 pt (équipe homogène), orange si < 1.2 pt, rouge si > 1.2 pt (forte dispersion)',
+              'Cartes compactes par agrès avec sections visuellement claires (meilleure / moyenne / plus faible / écart)',
+              'Passage en version v2.2.1',
+            ]
+          },
+          {
+            ver: '2.2.0', date: '15 mai 2026', current: false,
+            items: [
+              '🆕 Nouvel outil "Sélection d\'équipe" dans la section "Outils Coach" (sidebar admin+coach)',
+              'getNiveau() : regroupe automatiquement les catégories A/B/C — "N7 7-10 A/B/C" → niveau "N7 7-10"',
+              'Filtres : Saison (défaut = saison précédente) + Club + Niveau (regroupé)',
+              'Tableau des gymnastes disponibles : nom, catégorie exacte, meilleur total, moy., notes agrès, cliquable pour sélectionner',
+              'Sélection de 1 à 6 gymnastes avec pastilles numérotées + reset',
+              'Résumé équipe : moy. par agrès + leader de chaque agrès + meilleur total de l\'équipe',
+              'Passage en version v2.2.0',
+            ]
+          },
+          {
+            ver: '2.1.7', date: '15 mai 2026', current: false,
             items: [
               'Graphique Intra-Club : hauteur 280→340px pour plus de lisibilité avec 6 gymnastes',
               'Échelle Y : marge ±0.4 au lieu de ±0.5 — variations plus visibles sur notes proches',
@@ -12379,6 +13397,9 @@ function bindPageEvents() {
       } else if (id === 'ic-gymn-search') {
         // Debounce géré par bindPageEvents — recherche gymnastes intra-club
         if (state.icSearch !== val) { state.icSearch = val; stateChanged = true; }
+      } else if (id === 'se-search') {
+        // Debounce géré par bindPageEvents — recherche dans Sélection d'équipe
+        if (state.seSearch !== val) { state.seSearch = val; stateChanged = true; }
       } else {
         if (state.filterSearch !== val) { state.filterSearch = val; state.tablePage = 1; stateChanged = true; }
       }
@@ -13209,7 +14230,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
-const APP_VERSION = '2.1.7';
+const APP_VERSION = '2.2.11';
 
 // Mettre à jour l'affichage de la version dès que le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
@@ -13576,7 +14597,10 @@ function updateSidebarUser() {
 
   // ══ Section 2 : Analyses ════════════════════════════════════
   // Masqué pour les lecteurs (admin + coach uniquement)
-  show('section-analyses', !isLecteur, 'block');
+  show('section-analyses',     !isLecteur, 'block');
+
+  // ══ Section 2b : Outils Coach ══════════════════════════════
+  show('section-outils-coach', !isLecteur, 'block');
 
   // ══ Section 4 : Administration ══════════════════════════════
   // Visible uniquement pour les admins
