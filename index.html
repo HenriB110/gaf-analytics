@@ -5111,81 +5111,91 @@ function _exportGymPDF(nom, prenom) {
   const trendColor = trend === null ? '#888'
     : trend > 0.5 ? '#1a7a3a' : trend < -0.5 ? '#c62828' : '#888';
 
-  // ── Graphique SVG multi-lignes : Total + 4 agrès ────────────────────
+  // ── Graphique SVG double-axe Y : Total (axe gauche) + agrès (axe droit) ─
   const SVG_COLORS = { Total:'#003f8a', VT:'#c62828', UB:'#2e7d32', BB:'#e65100', FX:'#6a1b9a' };
-  // Garder Total + les 2 agrès ayant le plus de passages (évite surcharge si peu de données)
-  const agresRankedForSvg = [...AGRES].sort((a,b)=>{
-    const na=gymResults.filter(r=>(r.agres?.[a.code]?.final||0)>0).length;
-    const nb=gymResults.filter(r=>(r.agres?.[b.code]?.final||0)>0).length;
-    return nb-na;
-  }).slice(0,4); // jusqu'à 4 agrès — filtrés par >=2 points ensuite
-  const SVG_SERIES = [
-    { key:'Total', label:'Total', vals: gymResults.map(r=>r.total).filter(v=>v>0) },
-    ...agresRankedForSvg.map(ag=>({
-      key:ag.code, label:ag.code,
-      vals: gymResults.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0)
-    }))
-  ].filter(s=>s.vals.length>=2);
+  const svgDates   = gymResults.filter(r=>r.total>0).map(r=>r.date);
+  const svgN       = svgDates.length;
+  const svgRows    = gymResults.filter(r=>r.total>0); // une entrée par compétition
 
-  // Dates communes (toutes les compétitions avec total > 0)
-  const svgDates = gymResults.filter(r=>r.total>0).map(r=>r.date);
-  const svgN     = svgDates.length;
-
-  // Bornes Y globales sur toutes les séries
-  const allSvgVals = SVG_SERIES.flatMap(s=>gymResults.map(r=>{
-    if(s.key==='Total') return r.total>0?r.total:null;
-    return r.agres?.[s.key]?.final||null;
-  }).filter(v=>v!==null&&v>0));
-  const svgYMin = allSvgVals.length ? Math.max(0, Math.floor((Math.min(...allSvgVals)-0.8)*10)/10) : 0;
-  const svgYMax = allSvgVals.length ? Math.ceil((Math.max(...allSvgVals)+0.8)*10)/10 : 60;
-
-  const svgW=540, svgH=180, padL=40, padR=16, padT=14, padB=38;
+  const svgW=540, svgH=180, padL=40, padR=40, padT=18, padB=38;
   const plotW=svgW-padL-padR, plotH=svgH-padT-padB;
   const toX=i=>padL+(svgN>1?i*plotW/(svgN-1):plotW/2);
-  const toY=v=>padT+plotH-((v-svgYMin)/(svgYMax-svgYMin))*plotH;
 
-  const yTicks = 5;
-  const yStep  = (svgYMax-svgYMin)/(yTicks-1);
+  // ── Axe gauche (L) : Total ──────────────────────────────────────────
+  const totVals  = svgRows.map(r=>r.total).filter(v=>v>0);
+  const totMin   = totVals.length ? Math.max(0,Math.floor((Math.min(...totVals)-3)*2)/2) : 0;
+  const totMax   = totVals.length ? Math.ceil((Math.max(...totVals)+3)*2)/2 : 60;
+  const toYL     = v => padT+plotH-((v-totMin)/(totMax-totMin))*plotH;
 
-  // Légende : compacte sur 1 ligne en haut à droite
-  const legendItems = SVG_SERIES.map((s,i)=>{
-    const lx = padL + i*80;   // espacement fixe 80px par item
-    return `<rect x="${lx}" y="3" width="14" height="4" fill="${SVG_COLORS[s.key]||'#888'}" rx="2"/>
-    <text x="${lx+17}" y="8" font-size="7.5" fill="#444" font-weight="${s.key==='Total'?'700':'400'}">${s.key==='Total'?'Total':s.label}</text>`;
+  // ── Axe droit (R) : agrès individuels ───────────────────────────────
+  const agVals   = AGRES.flatMap(ag=>svgRows.map(r=>r.agres?.[ag.code]?.final||0).filter(v=>v>0));
+  const agMin    = agVals.length ? Math.max(0,Math.floor((Math.min(...agVals)-1.2)*10)/10) : 0;
+  const agMax    = agVals.length ? Math.ceil((Math.max(...agVals)+1.2)*10)/10 : 20;
+  const toYR     = v => padT+plotH-((v-agMin)/(agMax-agMin))*plotH;
+
+  // ── Ticks (5 niveaux pour chaque axe) ───────────────────────────────
+  const nTicks   = 5;
+  const ticksL   = Array.from({length:nTicks},(_,k)=>totMin+k*(totMax-totMin)/(nTicks-1));
+  const ticksR   = Array.from({length:nTicks},(_,k)=>agMin+k*(agMax-agMin)/(nTicks-1));
+
+  // ── Légende compacte en haut ─────────────────────────────────────────
+  const svgSeries = [
+    {key:'Total',  col:'#003f8a', dash:'',    label:'Total',   axis:'L'},
+    ...AGRES.filter(ag=>svgRows.some(r=>(r.agres?.[ag.code]?.final||0)>0))
+            .map(ag=>({key:ag.code, col:SVG_COLORS[ag.code], dash:'5,3', label:ag.code, axis:'R'}))
+  ];
+  const legendItems = svgSeries.map((s,i)=>{
+    const lx=padL+i*82;
+    return `<rect x="${lx}" y="3" width="14" height="4" fill="${s.col}" rx="2" opacity="${s.axis==='R'?'.8':'1'}"/>
+    <text x="${lx+17}" y="8" font-size="7.5" fill="${s.axis==='R'?'#666':'#333'}" font-weight="${s.axis==='L'?'700':'400'}">${s.label}</text>`;
   }).join('');
 
   const svgEl = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}"
     style="width:100%;height:auto;border:1px solid #e0e7f0;border-radius:6px;background:#fafbfd;display:block">
-    <!-- Grille H -->
-    ${Array.from({length:yTicks},(_,k)=>{
-      const v=svgYMin+k*yStep; const y=toY(v);
-      return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${svgW-padR}" y2="${y.toFixed(1)}" stroke="${k===0?'#c8d8ec':'#eaeef5'}" stroke-width="${k===0?'1':'0.7'}"/>
-      <text x="${padL-3}" y="${(y+3).toFixed(1)}" font-size="7" fill="#aaa" text-anchor="end">${v.toFixed(0)}</text>`;
-    }).join('')}
-    <!-- Séries -->
-    ${SVG_SERIES.map(s=>{
-      const pts=gymResults.filter(r=>r.total>0).map((r,i)=>{
-        const v=s.key==='Total'?r.total:(r.agres?.[s.key]?.final||0);
-        return v>0?{x:toX(i),y:toY(v),v}:null;
-      });
-      const validPts=pts.filter(Boolean);
-      if(validPts.length<2)return '';
-      const col=SVG_COLORS[s.key]||'#888';
-      const dash=s.key==='Total'?'':'5,3';
-      const poly=validPts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-      const dots=validPts.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${s.key==='Total'?4:3}" fill="${col}" stroke="#fff" stroke-width="2"><title>${s.label}: ${p.v.toFixed(2)}</title></circle>`).join('');
-      return `<polyline points="${poly}" fill="none" stroke="${col}" stroke-width="${s.key==='Total'?2:1.5}" stroke-dasharray="${dash}" stroke-linejoin="round"/>${dots}`;
-    }).join('')}
-    <!-- Labels X -->
-    ${gymResults.filter(r=>r.total>0).map((r,i)=>{
-      const step=Math.max(1,Math.ceil(svgN/7));
-      const show=i%step===0||i===svgN-1;
-      const bx=toX(i).toFixed(1); const by=(padT+plotH+10).toFixed(1);
-      return show?`<text x="${bx}" y="${by}" font-size="7" fill="#999" text-anchor="end"
-        transform="rotate(-35 ${bx} ${by})">${fmtDate(r.date)}</text>`:'';
-    }).join('')}
     <!-- Légende -->
     ${legendItems}
+    <!-- Grille + ticks axe L (gauche = Total) -->
+    ${ticksL.map((v,k)=>{const y=toYL(v);return `
+      <line x1="${padL}" y1="${y.toFixed(1)}" x2="${svgW-padR}" y2="${y.toFixed(1)}"
+        stroke="${k===0?'#c8d8ec':'#eaeef5'}" stroke-width="${k===0?'1':'0.6'}"/>
+      <text x="${padL-4}" y="${(y+3).toFixed(1)}" font-size="6.5" fill="#003f8a88" text-anchor="end">${v.toFixed(0)}</text>`;
+    }).join('')}
+    <!-- Ticks axe R (droite = agrès) -->
+    ${ticksR.map((v,k)=>{const y=toYR(v);return `
+      <text x="${svgW-padR+4}" y="${(y+3).toFixed(1)}" font-size="6.5" fill="#88888888" text-anchor="start">${v.toFixed(1)}</text>`;
+    }).join('')}
+    <!-- Ligne axe R (repère visuel) -->
+    <line x1="${svgW-padR}" y1="${padT}" x2="${svgW-padR}" y2="${padT+plotH}" stroke="#e0e0e0" stroke-width="0.8"/>
+    <!-- Série Total (axe L) -->
+    ${(()=>{
+      const pts=svgRows.map((r,i)=>r.total>0?{x:toX(i),y:toYL(r.total),v:r.total}:null).filter(Boolean);
+      if(pts.length<2)return '';
+      const poly=pts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+      const dots=pts.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4.5" fill="#003f8a" stroke="#fff" stroke-width="2"><title>Total: ${p.v.toFixed(2)}</title></circle>`).join('');
+      return `<polyline points="${poly}" fill="none" stroke="#003f8a" stroke-width="2.5" stroke-linejoin="round"/>${dots}`;
+    })()}
+    <!-- Séries agrès (axe R) -->
+    ${AGRES.map(ag=>{
+      const col=SVG_COLORS[ag.code];
+      const pts=svgRows.map((r,i)=>{const v=r.agres?.[ag.code]?.final||0;return v>0?{x:toX(i),y:toYR(v),v}:null;}).filter(Boolean);
+      if(pts.length<2)return '';
+      const poly=pts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+      const dots=pts.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="${col}" stroke="#fff" stroke-width="1.8"><title>${ag.code}: ${p.v.toFixed(2)}</title></circle>`).join('');
+      return `<polyline points="${poly}" fill="none" stroke="${col}" stroke-width="1.8" stroke-dasharray="5,3" stroke-linejoin="round"/>${dots}`;
+    }).join('')}
+    <!-- Labels X -->
+    ${svgRows.map((r,i)=>{
+      const step=Math.max(1,Math.ceil(svgN/7));
+      if(i%step!==0&&i!==svgN-1)return '';
+      const bx=toX(i).toFixed(1); const by=(padT+plotH+10).toFixed(1);
+      return `<text x="${bx}" y="${by}" font-size="7" fill="#999" text-anchor="end"
+        transform="rotate(-35 ${bx} ${by})">${fmtDate(r.date)}</text>`;
+    }).join('')}
+    <!-- Labels axes -->
+    <text x="${padL-28}" y="${(padT+plotH/2).toFixed(0)}" font-size="6.5" fill="#003f8a88" text-anchor="middle"
+      transform="rotate(-90 ${padL-28} ${(padT+plotH/2).toFixed(0)})">Total</text>
+    <text x="${svgW-padR+28}" y="${(padT+plotH/2).toFixed(0)}" font-size="6.5" fill="#88888888" text-anchor="middle"
+      transform="rotate(90 ${svgW-padR+28} ${(padT+plotH/2).toFixed(0)})">Agrès</text>
   </svg>`;
 
   // ── Dernières compétitions (8 max, ordre DESC) ────────────────────────
@@ -12005,7 +12015,17 @@ function showAbout() {
 
         ${[
           {
-            ver: '2.2.11', date: '16 mai 2026', current: true,
+            ver: '2.2.12', date: '16 mai 2026', current: true,
+            items: [
+              'PDF gymnaste : graphique double-axe Y — axe gauche (bleu) pour le Total, axe droit (gris) pour les 4 agrès',
+              'Les agrès ont leur propre échelle (min agrès - 1.2, max agrès + 1.2) — les variations sont clairement visibles',
+              'Total : ligne pleine 2.5px, points 4.5px. Agrès : pointillés 1.8px, points 3.5px',
+              'Labels axes rotatifs pour lisibilité, ticks L en bleu pâle, ticks R en gris pâle',
+              'Passage en version v2.2.12',
+            ]
+          },
+          {
+            ver: '2.2.11', date: '16 mai 2026', current: false,
             items: [
               'PDF gymnaste : tableau Dernières compétitions — colgroup avec largeurs explicites (Date 70px, Catégorie 92px, Total 50px, agrès 42px, Compétition = reste)',
               'Wrapping du texte activé dans la colonne Compétition (word-break:break-word) — fini les "Demi Finales…"',
@@ -14230,7 +14250,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
-const APP_VERSION = '2.2.11';
+const APP_VERSION = '2.2.12';
 
 // Mettre à jour l'affichage de la version dès que le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
