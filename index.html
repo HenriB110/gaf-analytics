@@ -2199,6 +2199,8 @@ let state = {
   detailFilterClub: '',
   detailSearch: '',
   detailPoolPage: 1,     // page courante dans la grille de sélection gymnastes
+  homeViewMode:   'auto', // 'auto'|'coach' — switch admin (auto = rôle par défaut)
+  homeCoachCat:   '',     // catégorie filtrée dans "Mon Club" ('' = toutes)
 
   // ── Profils Coach (admin) ────────────────────────────────────────────
   coachProfiles:    null,   // null=pas chargé, Map<id,{email,club,categories}>
@@ -3920,7 +3922,8 @@ function _keyAnalyses() {
     // Sélection équipe
     s.seSaison || '', s.seGroupe || '', s.seClub || '', s.seNiveau || '', (s.seGymns ?? []).join(','), s.seSearch || '',
     s.coachSelClub ?? '', s.coachCatSearch || '', s.coachCatGroup || '',
-    s.coachProfile == null ? 'null' : (s.coachProfile.club || '') + '|' + (s.coachProfile.categories?.length ?? 0),
+    s.homeViewMode || 'auto', s.homeCoachCat || '',
+    s.coachProfile == null ? 'null' : (s.coachProfile.club||'')+'|'+(s.coachProfile.categories?.length??0)+'|'+(s.coachProfile._missingCols?'mc':'ok'),
     s.alertesFilter || '', s.alertesPage || 1, s.alertesAdminCoach || '',
     s.alertesList == null ? 'null' : s.alertesList.length,
     // Comparaison Equipes
@@ -3976,6 +3979,7 @@ function _chartDataSig() {
     s.filterSaison || '', s.filterCat || '', s.filterGroupe || '',
     s.activeAgres  || '',
     s.homeFilterSaison   || '', s.homeFilterCategory || '',  // filtres accueil
+    s.homeViewMode || 'auto', s.homeCoachCat || '',  // vue accueil (coach/globale)
     // Fiche gymnaste
     s.currentGroupe || '',
     s.currentGymnaste ? (s.currentGymnaste.nom + '|' + s.currentGymnaste.prenom) : '',
@@ -4086,7 +4090,10 @@ function renderPage() {
   el.innerHTML = (PAGE_RENDERERS[state.currentPage] || renderHome)();
   bindPageEvents();
 
-  // 6. Graphiques après peinture (rAF) — sautés si signature inchangée
+  // 6. Graphiques après peinture (rAF)
+  // Le DOM vient d'être réécrit → les canvases sont neufs → forcer initCharts()
+  // même si la signature des données est inchangée (cas : re-render async post-login)
+  _lastChartsDataSig = ''; // invalider pour garantir l'exécution de initCharts()
   const chartSig = _chartDataSig();
   if (_pendingRafId) cancelAnimationFrame(_pendingRafId);
   _pendingRafId = requestAnimationFrame(() => {
@@ -4313,7 +4320,197 @@ function renderHome() {
     </tr>`;
   }).join('');
 
+  // ── Mode coach : vue personnalisée ─────────────────────────────────────
+  const isCoachView = _supaRole === 'coach' || (_supaRole === 'admin' && state.homeViewMode === 'coach');
+
+  // Déclencher le chargement du profil coach si nécessaire (async → re-render auto)
+  if (isCoachView && state.coachProfile === null && _supabase && _supaUser) {
+    loadCoachProfile(); // async, appellera renderPage() dans son finally
+  }
+
+  const coachProfile = state.coachProfile;
+  const coachClub    = coachProfile?.club || null;
+
+  // Section alertes pour coach
+  let alertesBannerHtml = '';
+  if (isCoachView) {
+    const unread = (state.alertesList || []).filter(a => !a.lu).length;
+    const total  = (state.alertesList || []).length;
+    alertesBannerHtml = `
+      <div style="display:flex;align-items:center;gap:14px;padding:14px 20px;border-radius:12px;
+                  background:${unread>0?'rgba(198,40,40,.07)':'rgba(26,122,58,.07)'};
+                  border:1.5px solid ${unread>0?'var(--c-red)':'#1a7a3a'};margin-bottom:16px">
+        <span style="font-size:26px">${unread>0?'🔔':'✅'}</span>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:800;color:${unread>0?'var(--c-red)':'#1a7a3a'}">
+            ${unread>0 ? `${unread} alerte${unread>1?'s':''} non lue${unread>1?'s':''}` : 'Aucune alerte non lue'}
+          </div>
+          <div style="font-size:12px;color:var(--c-text3);margin-top:2px">
+            ${unread>0 ? 'Des baisses de performance ont été détectées.' : 'Toutes les gymnastes ont des performances stables.'}
+            ${total ? ` ${total} alerte${total>1?'s':''} au total.` : ''}
+          </div>
+        </div>
+        ${unread>0 ? `<button class="btn btn-outline btn-sm" onclick="navigate('alertes')"
+          style="font-size:12px;border-color:var(--c-red);color:var(--c-red)">
+          Voir les alertes →
+        </button>` : ''}
+      </div>`;
+  }
+
+  // Section "Mon Club" pour coach
+  let monClubHtml = '';
+  if (isCoachView && state.coachProfile === null) {
+    // Profil en cours de chargement — placeholder discret
+    monClubHtml = `
+      <div style="padding:12px 18px;border-radius:10px;background:var(--c-surface2);
+                  border:1px solid var(--c-border);margin-bottom:16px;
+                  font-size:12px;color:var(--c-text3);display:flex;align-items:center;gap:10px">
+        <span style="animation:spin 1s linear infinite;display:inline-block">⏳</span>
+        Chargement du profil coach…
+      </div>`;
+  } else if (isCoachView && coachClub) {
+    const clubNorm  = normalizeClub(coachClub);
+    const clubResults = resFiltered.filter(r => normalizeClub(r.club) === clubNorm);
+    const coachCats = coachProfile?.categories || [];
+    const selCatClub = state.homeCoachCat || ''; // '' = toutes les catégories du coach
+
+    // Calcul des stats pour une liste de résultats donnée
+    function _statsForResults(rList) {
+      const gymns  = [...new Set(rList.map(r => `${r.nom}|${r.prenom}`))];
+      const totals = rList.map(r => r.total).filter(v => v > 0);
+      const best   = totals.length ? Math.max(...totals) : 0;
+      const moyenne= totals.length ? avg(totals) : 0;
+      const top3map = new Map();
+      rList.forEach(r => {
+        const k = `${r.nom}|${r.prenom}`;
+        if (!top3map.has(k) || r.total > top3map.get(k).best)
+          top3map.set(k, { nom:r.nom, prenom:r.prenom, best:r.total, cat:r.categorie });
+      });
+      const top3 = [...top3map.values()].sort((a,b)=>b.best-a.best).slice(0,6);
+      return { gymns, best, moyenne, top3 };
+    }
+
+    // Filtrer selon la catégorie sélectionnée dans le dropdown
+    const baseResults = coachCats.length
+      ? clubResults.filter(r => coachCats.includes(r.categorie))
+      : clubResults;
+    const displayResults = selCatClub
+      ? baseResults.filter(r => r.categorie === selCatClub)
+      : baseResults;
+    const { gymns: gymnsClub, best: bestTotal, moyenne: avgTotal, top3 } = _statsForResults(displayResults);
+
+    // Évolution vs saison précédente
+    const saisonsList = [...new Set(state.results.map(r=>r.saison))].sort().reverse();
+    const prevSaison  = saisonsList[saisonsList.indexOf(selSaison)+1] || null;
+    let evolutionHtml = '';
+    if (prevSaison && avgTotal > 0) {
+      const prevR = state.results.filter(r =>
+        normalizeClub(r.club) === clubNorm && r.saison === prevSaison && r.total > 0
+        && (!selCatClub || r.categorie === selCatClub)
+        && (!coachCats.length || coachCats.includes(r.categorie))
+      );
+      const prevAvg = prevR.length ? avg(prevR.map(r=>r.total)) : 0;
+      if (prevAvg) {
+        const diff  = avgTotal - prevAvg;
+        const col   = diff >= 0 ? '#1a7a3a' : 'var(--c-red)';
+        evolutionHtml = `<span style="font-size:11px;font-weight:700;color:${col};margin-left:6px">
+          ${diff>=0?'↑':'↓'} ${diff>=0?'+':''}${diff.toFixed(2)} vs ${prevSaison}
+        </span>`;
+      }
+    }
+
+    // Dropdown catégorie
+    const SEL_STYLE = 'font-size:12px;padding:5px 10px;border-radius:8px;border:1.5px solid var(--c-blue);background:var(--c-surface2);color:var(--c-text);cursor:pointer;font-weight:600';
+    const catDropdown = coachCats.length > 1 ? `
+      <select style="${SEL_STYLE}" onchange="state.homeCoachCat=this.value;renderPage()">
+        <option value="">Toutes mes catégories</option>
+        ${coachCats.map(c => `<option value="${c}" ${c===selCatClub?'selected':''}>${c}</option>`).join('')}
+      </select>` : (coachCats.length === 1 ? `<span style="font-size:12px;font-weight:600;color:var(--c-blue)">${coachCats[0]}</span>` : '');
+
+    monClubHtml = `
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <span>🏟</span>
+          <h2>${coachClub}${selCatClub ? ` <span style="font-size:13px;font-weight:500;color:var(--c-text3)">— ${selCatClub}</span>` : ''}</h2>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+            ${catDropdown}
+            <span style="font-size:12px;color:var(--c-text3)">${selSaison}</span>
+          </div>
+        </div>
+        <div class="card-body" style="padding:16px 20px">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+            <div class="stat-card blue" style="margin:0;text-align:center">
+              <div class="stat-value">${gymnsClub.length}</div>
+              <div class="stat-label">Gymnaste${gymnsClub.length>1?'s':''}</div>
+            </div>
+            <div class="stat-card gold" style="margin:0;text-align:center">
+              <div class="stat-value">${bestTotal>0?bestTotal.toFixed(2):'—'}</div>
+              <div class="stat-label">Meilleur total</div>
+            </div>
+            <div class="stat-card green" style="margin:0;text-align:center">
+              <div class="stat-value">${avgTotal>0?avgTotal.toFixed(2):'—'}</div>
+              <div class="stat-label">Moyenne${evolutionHtml}</div>
+            </div>
+          </div>
+          ${top3.length ? `
+          <div style="font-size:12px;font-weight:700;color:var(--c-text2);margin-bottom:8px">🏆 Top ${top3.length} gymnaste${top3.length>1?'s':''}</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            ${top3.map((g,idx) => `
+              <div style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-radius:8px;
+                           background:var(--c-surface2);cursor:pointer"
+                   onclick="openGymnasteDetail('${g.nom.replace(/'/g,"\'")}','${g.prenom.replace(/'/g,"\'")}')">
+                <span style="font-size:14px;font-weight:900;color:${['#c9971a','#888','#a0522d','#555','#555','#555'][idx]}">${idx+1}</span>
+                <span style="font-size:13px;font-weight:700">${g.prenom} ${g.nom}</span>
+                <span style="font-size:11px;color:var(--c-text3);flex:1">${g.cat}</span>
+                <span style="font-size:13px;font-weight:700;color:var(--c-blue)">${g.best>0?g.best.toFixed(2):'—'}</span>
+              </div>`).join('')}
+          </div>` : `<p style="font-size:12px;color:var(--c-text3)">Aucune donnée pour ce club${selCatClub?' en '+selCatClub:''} cette saison.</p>`}
+        </div>
+      </div>`;
+  } else if (isCoachView && coachProfile !== null && !coachClub) {
+    // Admin en Vue Coach sans profil club → message informatif (pas d'erreur)
+    if (_supaRole === 'admin') {
+      monClubHtml = `
+        <div style="padding:12px 16px;border-radius:10px;background:var(--c-surface2);
+                    border:1px solid var(--c-border);margin-bottom:16px;
+                    font-size:12px;color:var(--c-text3)">
+          <strong style="color:var(--c-text2)">ℹ️ Vue Coach (Admin)</strong> —
+          La section "Mon Club" est visible pour les coachs ayant configuré leur club et catégories dans
+          <a onclick="navigate('params_coach')" style="color:var(--c-blue);cursor:pointer">Paramètres Coach</a>.
+        </div>`;
+    } else {
+      // Coach sans profil configuré
+      monClubHtml = `
+        <div class="card" style="margin-bottom:16px;border-left:3px solid var(--c-text3)">
+          <div class="card-body" style="padding:14px 18px;color:var(--c-text3)">
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px">Club non configuré</div>
+            <div style="font-size:12px">Définissez votre club dans
+              <a onclick="navigate('params_coach')" style="color:var(--c-blue);cursor:pointer">Paramètres Coach</a>
+              pour voir les données de votre club ici.</div>
+          </div>
+        </div>`;
+    }
+  }
+
+  // Switch admin
+  const adminSwitchHtml = _supaRole === 'admin' ? `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:16px;justify-content:flex-end">
+      ${state.homeViewMode==='coach' ? `
+        <span style="font-size:11px;font-weight:700;color:var(--c-blue);background:rgba(0,63,138,.1);
+              padding:3px 10px;border-radius:12px;margin-right:4px">Vue Coach active</span>` : ''}
+      <button onclick="state.homeViewMode=state.homeViewMode==='coach'?'auto':'coach';renderPage()"
+        style="padding:6px 14px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;
+               border:1.5px solid ${state.homeViewMode==='coach'?'var(--c-blue)':'var(--c-border)'};
+               background:${state.homeViewMode==='coach'?'var(--c-blue)':'var(--c-surface)'};
+               color:${state.homeViewMode==='coach'?'#fff':'var(--c-text2)'}">
+        ${state.homeViewMode==='coach'?'👁 Vue Globale':'👤 Vue Coach'}
+      </button>
+    </div>` : '';
+
   return `
+    ${adminSwitchHtml}
+    ${alertesBannerHtml}
+    ${monClubHtml}
     <!-- ── Stat cards globales ── -->
     <div class="stats-grid">
       <div class="stat-card blue"><div class="stat-value">${gymns}</div><div class="stat-label">Gymnastes</div></div>
@@ -10564,7 +10761,12 @@ function _destroyOrphanCharts() {
 function mkChart(id, config) {
   const canvas = document.getElementById(id);
   if (!canvas) return;
-  if (canvas.closest('.tab-panel') && !canvas.closest('.tab-panel.active')) return;
+  // Guard : ne pas rendre dans un panneau caché (display:none) — teste le style computed
+  const tabPanel = canvas.closest('.tab-panel');
+  if (tabPanel) {
+    const disp = tabPanel.style.display || window.getComputedStyle(tabPanel).display;
+    if (disp === 'none') return;
+  }
 
   const existing = chartInstances[id];
   if (existing && existing.canvas === canvas && existing.config.type === config.type) {
@@ -10622,7 +10824,7 @@ function _chartsHome(textColor, gridColor) {
         tension: .35, pointRadius: 3, fill: true, borderWidth: 2 }] },
       options: { responsive: true, maintainAspectRatio: false,
         scales: { y: { grid: {color: gridColor}, beginAtZero: true,
-                       ticks: { stepSize: 1 } }, x: { grid: {color: gridColor} } },
+                       ticks: { maxTicksLimit: 8, precision: 0 } }, x: { grid: {color: gridColor} } },
         plugins: { legend: { display: false } }
       }
     });
@@ -12343,7 +12545,61 @@ function showAbout() {
 
         ${[
           {
-            ver: '2.4.9', date: '18 mai 2026', current: true,
+            ver: '2.5.5', date: '18 mai 2026', current: true,
+            items: [
+              'Section Mon Club : Top 3 → Top 6 gymnastes (titre dynamique selon le nombre disponible)',
+              'Passage en version v2.5.5',
+            ]
+          },
+          {
+            ver: '2.5.4', date: '18 mai 2026', current: false,
+            items: [
+              'Section Mon Club : titre dynamique "Club — Catégorie" quand une catégorie est sélectionnée dans le dropdown',
+              'Dropdown catégorie : border bleu + fond surface2 + font-weight:600 pour une meilleure visibilité',
+              'Passage en version v2.5.4',
+            ]
+          },
+          {
+            ver: '2.5.3', date: '18 mai 2026', current: false,
+            items: [
+              'Page Accueil coach : dropdown de filtre par catégorie dans la section "Mon Club" — sélection dynamique parmi les catégories configurées du coach',
+              'Calcul des stats (gymnastes, meilleur total, moyenne, top 3) recalculé à chaque changement de catégorie',
+              'Évolution vs saison précédente filtrée sur la catégorie sélectionnée',
+              'state.homeCoachCat dans _keyAnalyses pour déclencher le re-render',
+              'Passage en version v2.5.3',
+            ]
+          },
+          {
+            ver: '2.5.2', date: '18 mai 2026', current: false,
+            items: [
+              'Fix page Accueil coach : déclenchement de loadCoachProfile() depuis renderHome si profil pas encore chargé — re-render automatique via finally{renderPage()}',
+              'Spinner discret pendant le chargement du profil (état coachProfile===null)',
+              'Condition else if coachClub précisée pour distinguer chargement en cours vs profil vide',
+              'Passage en version v2.5.2',
+            ]
+          },
+          {
+            ver: '2.5.1', date: '18 mai 2026', current: false,
+            items: [
+              'Fix graphiques accueil : homeViewMode ajouté dans _chartDataSig() — les graphiques se recréent lors du basculement Vue Coach ↔ Vue Globale',
+              'Fix section Mon Club admin : message informatif adapté quand un admin bascule en Vue Coach sans profil club configuré',
+              'Passage en version v2.5.1',
+            ]
+          },
+          {
+            ver: '2.5.0', date: '18 mai 2026', current: false,
+            items: [
+              '🆕 Page Accueil conditionnelle par rôle (v2.5.0)',
+              'Coach : bandeau "Mes Alertes" (non lues + bouton) + section "Mon Club" (KPIs + Top 3 gymnastes + évolution vs saison précédente)',
+              'Admin : switch discret "Vue Coach / Vue Globale" en haut à droite — bascule entre la vue globale et la vue personnalisée',
+              'Lecteur : vue globale standard inchangée',
+              'Si profil coach non configuré → invite à renseigner Paramètres Coach',
+              'homeViewMode dans state + _keyAnalyses pour le re-render',
+              'Passage en version v2.5.0',
+            ]
+          },
+          {
+            ver: '2.4.9', date: '18 mai 2026', current: false,
             items: [
               'Filtre coach admin : tri sur l\'email via localeCompare (insensible à la casse, locale fr)',
               'Les IDs sans profil chargé tombent en fin de liste (fallback sur l\'UUID)',
@@ -15195,7 +15451,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
-const APP_VERSION = '2.4.9';
+const APP_VERSION = '2.5.5';
 
 // Mettre à jour l'affichage de la version dès que le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
