@@ -1341,6 +1341,15 @@ tbody td { padding: 9px 12px; color: var(--c-text); }
     <div class="nav-item" data-page="selection_equipe">
       <span class="nav-icon">📋</span><span class="nav-label">Sélection d'équipe</span>
     </div>
+    <!-- Alertes : visible pour coach et admin -->
+    <div class="nav-item" id="nav-alertes" data-page="alertes">
+      <span class="nav-icon">🔔</span><span class="nav-label">Alertes</span>
+      <span class="nav-badge" id="nav-alertes-count" style="display:none">0</span>
+    </div>
+    <!-- Paramètres Coach : visible uniquement pour le rôle coach (pas admin) -->
+    <div class="nav-item" id="nav-params-coach" data-page="params_coach" style="display:none">
+      <span class="nav-icon">⚙️</span><span class="nav-label">Paramètres Coach</span>
+    </div>
   </div>
 
   <!-- ══ SECTION 3 : PAR GROUPE (visible par tous) ══ -->
@@ -2190,6 +2199,29 @@ let state = {
   detailFilterClub: '',
   detailSearch: '',
   detailPoolPage: 1,     // page courante dans la grille de sélection gymnastes
+
+  // ── Profils Coach (admin) ────────────────────────────────────────────
+  coachProfiles:    null,   // null=pas chargé, Map<id,{email,club,categories}>
+
+  // ── Alertes ──────────────────────────────────────────────────────────
+  alertesList:      null,   // null=pas chargé, []=vide, [...]=données
+  alertesFilter:    'all',  // 'all' | 'unread'
+  alertesPage:      1,      // pagination
+  alertesAdminCoach:'',     // filtre coach pour l'admin
+
+  // ── Profil Coach ─────────────────────────────────────────────────────
+  coachProfile:     null,   // null=pas chargé, {}=chargé
+  coachSelClub:     null,   // null=pas init → prend profile.club
+  coachCatSearch:   '',     // recherche dans la liste des catégories
+  coachCatGroup:    '',     // filtre groupe actif ('G1'…|'' = tous)
+
+  // ── Sélection d'équipe ───────────────────────────────────────────────
+  seSaison:  '',
+  seGroupe:  '',
+  seClub:    '',
+  seNiveau:  '',
+  seGymns:   [],
+  seSearch:  '',
 };
 
 /* =========================================================
@@ -3636,6 +3668,8 @@ const PAGE_RENDERERS = {
   groupe:             renderGroupe,
   comp_equipes:       renderCompEquipes,
   selection_equipe:   renderSelectionEquipe,
+  alertes:            renderAlertes,
+  params_coach:       renderParamsCoach,
 };
 
 
@@ -3885,6 +3919,10 @@ function _keyAnalyses() {
     s.icGroupe || '', s.icClub || '', s.icCategory || '', s.icSearch || '',
     // Sélection équipe
     s.seSaison || '', s.seGroupe || '', s.seClub || '', s.seNiveau || '', (s.seGymns ?? []).join(','), s.seSearch || '',
+    s.coachSelClub ?? '', s.coachCatSearch || '', s.coachCatGroup || '',
+    s.coachProfile == null ? 'null' : (s.coachProfile.club || '') + '|' + (s.coachProfile.categories?.length ?? 0),
+    s.alertesFilter || '', s.alertesPage || 1, s.alertesAdminCoach || '',
+    s.alertesList == null ? 'null' : s.alertesList.length,
     // Comparaison Equipes
     s.ceCategory || '', s.ceSaison || '', (s.ceClubs ?? []).join(','),
     s.ceActiveTab || '', s.ceClubSearch || '',
@@ -9308,6 +9346,296 @@ tbody tr:last-child td{border-bottom:2px solid #c8d8ec}
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// PARAMÈTRES COACH — v2.3.0
+// Permet au coach de définir son club et ses catégories dans Supabase.
+// La sauvegarde est sécurisée : le coach ne peut modifier que son propre profil.
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Charge le profil du coach connecté depuis Supabase et met à jour state.coachProfile.
+ */
+async function loadCoachProfile() {
+  if (!_supabase || !_supaUser) {
+    state.coachProfile = { club: '', categories: [] };
+    renderPage();
+    return;
+  }
+  try {
+    const { data, error } = await _supabase
+      .from('profiles')
+      .select('id, role, club, categories')
+      .eq('id', _supaUser.id)
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === 'PGRST204' || error.message?.includes('club') || error.status === 400) {
+        state.coachProfile = { club: '', categories: [], _missingCols: true };
+      } else {
+        throw error;
+      }
+    } else {
+      state.coachProfile = data || { club: '', categories: [] };
+      state.coachSelClub = null; // force ré-init autocomplete avec profile.club
+    }
+  } catch(e) {
+    console.warn('loadCoachProfile:', e.message);
+    state.coachProfile = { club: '', categories: [], _error: e.message };
+  } finally {
+    // renderPage() TOUJOURS appelé
+    renderPage();
+  }
+}
+
+/**
+ * Sauvegarde le profil du coach (club + catégories) dans Supabase.
+ * Sécurisé : UPDATE uniquement sur l'id de l'utilisateur connecté.
+ */
+/**
+ * Lit les valeurs actuelles du formulaire Paramètres Coach.
+ * Centralise la lecture de l'autocomplete club + les checkboxes catégories.
+ * Utilisé par le bouton Enregistrer pour éviter les lectures DOM dispersées.
+ */
+function _getCoachFormValues() {
+  // Club : lire depuis l'API de l'autocomplete (v2.3.4+)
+  const club = window['_clubAC_coach-club-ac']?.getValue()
+    ?? state.coachSelClub
+    ?? '';
+
+  // Catégories : lire les cases cochées dans le grid
+  // Fallback sur toutes les .cat-cb de la page si le grid est vide
+  let cats = [...(document.querySelectorAll('#coach-cats-grid .cat-cb:checked') || [])]
+    .map(cb => cb.value);
+
+  // Fallback : si le grid n'a pas encore été initialisé, prendre les coches du profil actuel
+  if (!cats.length && state.coachProfile?.categories?.length) {
+    cats = state.coachProfile.categories;
+  }
+
+  return { club, cats };
+}
+
+async function saveCoachProfile(club, categories) {
+  if (!_supabase || !_supaUser) { toast('Non connecté', 'error'); return; }
+  const btn = document.getElementById('coach-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enregistrement…'; }
+  try {
+    const clubVal = (club || '').trim() || null;
+    const catsVal = Array.isArray(categories) && categories.length ? categories : null;
+
+    console.log('[Coach] Sauvegarde profil:', { clubVal, catsVal });
+
+    const { error } = await _supabase
+      .from('profiles')
+      .update({ club: clubVal, categories: catsVal })
+      .eq('id', _supaUser.id);
+
+    if (error) throw error;
+
+    // Mettre à jour le state local
+    state.coachProfile = { ...(state.coachProfile || {}), club: clubVal || '', categories: catsVal || [] };
+    // Garder coachSelClub synchronisé avec la valeur sauvegardée
+    state.coachSelClub = clubVal || '';
+
+    toast(`✅ Profil enregistré — Club : ${clubVal || '(aucun)'} · ${(catsVal||[]).length} catégorie${(catsVal||[]).length>1?'s':''}`, 'success');
+
+    // Recharger depuis Supabase pour confirmer (reset coachSelClub=null pour ré-init propre)
+    state.coachSelClub = null;
+    await loadCoachProfile();
+  } catch(e) {
+    console.error('[Coach] saveCoachProfile:', e);
+    toast('❌ Erreur : ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Enregistrer'; }
+  }
+}
+
+function renderParamsCoach() {
+  if (_supaRole !== 'coach') {
+    return `<div class="empty-state"><div class="empty-icon">🔒</div>
+      <h3>Accès restreint</h3><p>Cette page est réservée aux entraîneurs.</p></div>`;
+  }
+  if (!_supabase) {
+    return `<div class="empty-state"><div class="empty-icon">📶</div>
+      <h3>Mode hors-ligne</h3><p>Les paramètres coach nécessitent une connexion Supabase.</p></div>`;
+  }
+
+  // Charger le profil si pas encore fait
+  if (!state.coachProfile) {
+    loadCoachProfile();
+    return `<div class="section-title">⚙️ Paramètres d'entraîneur</div>
+      <div style="text-align:center;padding:40px;color:var(--c-text3)">
+        <div style="font-size:32px;margin-bottom:12px">⏳</div>Chargement du profil…</div>`;
+  }
+
+  const profile    = state.coachProfile;
+  const allClubs   = [...new Set(state.results.map(r => normalizeClub(r.club)).filter(Boolean))].sort();
+  const selClub    = profile.club    || '';
+  const selCats    = profile.categories || [];
+  const catSearch  = state.coachCatSearch || '';
+  const catGroup   = state.coachCatGroup  || '';
+  const SEL        = 'font-size:13px;padding:7px 10px;border-radius:8px;border:1px solid var(--c-border);background:var(--c-surface);color:var(--c-text);width:100%';
+
+  // ── Club UI (distinct de profile.club sauvegardé) ────────────────────
+  // Initialiser coachSelClub à partir du profil si pas encore défini
+  if (state.coachSelClub === null) state.coachSelClub = profile.club || '';
+  const uiClub = state.coachSelClub;
+
+  // ── Catégories disponibles selon le club UI sélectionné ──────────────
+  const allCatsForClub = uiClub
+    ? [...new Set(state.results.filter(r => normalizeClub(r.club) === uiClub).map(r => r.categorie).filter(Boolean))].sort()
+    : [...new Set(state.results.map(r => r.categorie).filter(Boolean))].sort();
+
+  // Mapping groupe → catégories (pour les boutons rapides)
+  const GROUPES_CATS = Object.fromEntries(
+    [...new Set(state.results.map(r => r.groupe).filter(Boolean))]
+      .map(g => [g, [...new Set(state.results.filter(r => r.groupe === g).map(r => r.categorie).filter(Boolean))]])
+  );
+  // Groupes disponibles parmi les catégories du club
+  const allGroupesAvail = [...new Set(
+    state.results.filter(r => allCatsForClub.includes(r.categorie)).map(r => r.groupe).filter(Boolean)
+  )].sort();
+
+  // ── Application des filtres (groupe + recherche) ──────────────────────
+  let filteredCats = allCatsForClub;
+  if (catGroup)  filteredCats = filteredCats.filter(c => (GROUPES_CATS[catGroup] || []).includes(c));
+  if (catSearch) filteredCats = filteredCats.filter(c => c.toLowerCase().includes(catSearch.toLowerCase()));
+
+  const catsCheckboxes = filteredCats.map(cat => {
+    const checked = selCats.includes(cat);
+    return `<label style="display:flex;align-items:center;gap:7px;padding:5px 9px;border-radius:6px;
+                  cursor:pointer;min-width:180px;flex:1;
+                  background:${checked?'rgba(0,63,138,.1)':'transparent'};
+                  border:1px solid ${checked?'var(--c-blue)':'var(--c-border)'};transition:all .15s">
+      <input type="checkbox" class="cc-cat-cb" value="${cat}" ${checked?'checked':''}
+        onchange="(()=>{var lb=this.closest('label');lb.style.background=this.checked?'rgba(0,63,138,.1)':'transparent';lb.style.borderColor=this.checked?'var(--c-blue)':'var(--c-border)'})()">
+      <span style="font-size:12px">${cat}</span>
+    </label>`;
+  }).join('');
+
+  const groupBtns = ['', ...allGroupesAvail].map(g => {
+    const active = catGroup === g;
+    return `<button onclick="state.coachCatGroup='${g}';renderPage()"
+      style="padding:4px 10px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;
+             border:1.5px solid ${active?'var(--c-blue)':'var(--c-border)'};
+             background:${active?'var(--c-blue)':'transparent'};
+             color:${active?'#fff':'var(--c-text2)'};transition:all .15s">
+      ${g||'Tous'}
+    </button>`;
+  }).join('');
+
+  return `
+    <div class="section-title">⚙️ Paramètres d'entraîneur</div>
+    <div class="section-sub">Définissez votre club et les catégories que vous entraînez</div>
+
+    ${profile._missingCols ? `
+    <div class="card" style="max-width:680px;margin-top:16px;border-left:4px solid var(--c-red)">
+      <div class="card-body" style="padding:14px 18px">
+        <div style="font-size:13px;font-weight:700;color:var(--c-red);margin-bottom:8px">
+          ⚠️ Colonnes manquantes dans la table <code>profiles</code>
+        </div>
+        <p style="font-size:12px;color:var(--c-text2);margin-bottom:10px">
+          Les colonnes <code>club</code> et <code>categories</code> n'existent pas encore.
+          Exécutez ce SQL dans votre <strong>Supabase Dashboard → SQL Editor</strong> :
+        </p>
+        <pre style="background:var(--c-surface2);border-radius:6px;padding:10px;font-size:11px;overflow-x:auto;user-select:all">ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS club text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS categories text[];</pre>
+        <p style="font-size:11px;color:var(--c-text3);margin-top:8px">
+          Après exécution, rechargez la page.
+        </p>
+      </div>
+    </div>` : ''}
+
+    <div class="card" style="max-width:680px;margin-top:16px" id="coach-params-panel">
+      <div class="card-header"><span>🏠</span><h2>Profil Coach</h2>
+        <span style="margin-left:auto;font-size:11px;color:var(--c-text3)">${_supaUser?.email||''}</span>
+      </div>
+      <div class="card-body" style="padding:20px 24px;display:flex;flex-direction:column;gap:20px">
+
+        <!-- Club — autocomplete (initialisé par _initParamsCoachIfNeeded) -->
+        <div>
+          <label style="font-size:12px;font-weight:700;color:var(--c-text2);display:block;margin-bottom:6px">
+            🏢 Club entraîné
+            ${profile.club ? `<span style="font-size:11px;font-weight:400;color:var(--c-text3);margin-left:8px">
+              · Enregistré : <strong style="color:var(--c-blue)">${profile.club}</strong></span>` : ''}
+          </label>
+          <div id="coach-club-ac"></div>
+        </div>
+
+        <!-- Catégories — squelette rempli par _initCoachCatControls via requestAnimationFrame -->
+        <div>
+          <label style="font-size:12px;font-weight:700;color:var(--c-text2);display:block;margin-bottom:8px">
+            🎯 Catégories entraînées
+            <span id="coach-cats-count" style="font-size:11px;font-weight:400;color:var(--c-text3);margin-left:6px">
+              ${selCats.length ? `${selCats.length} sélectionnée${selCats.length>1?'s':''}` : 'Aucune'}
+            </span>
+          </label>
+
+          <!-- Boutons groupe (remplis par _initCoachCatControls) -->
+          <div class="coach-group-bar" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px"></div>
+
+          <!-- Recherche -->
+          <div style="position:relative;margin-bottom:8px">
+            <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--c-text3)">🔍</span>
+            <input class="coach-cat-search" type="search" placeholder="Filtrer les catégories…"
+              style="width:100%;padding:6px 9px 6px 28px;border-radius:8px;border:1px solid var(--c-border);
+                     background:var(--c-surface2);color:var(--c-text);font-size:12px;box-sizing:border-box">
+          </div>
+
+          <!-- Grille catégories -->
+          <div id="coach-cats-grid"
+            style="display:flex;flex-wrap:wrap;gap:6px;padding:10px;background:var(--c-surface2);
+                   border-radius:8px;border:1px solid var(--c-border);min-height:60px;max-height:320px;overflow-y:auto">
+            <span style="font-size:12px;color:var(--c-text3)">Chargement…</span>
+          </div>
+        </div>
+
+        <!-- Bouton -->
+        <div style="display:flex;gap:10px;align-items:center">
+          <button id="coach-save-btn" class="btn btn-primary"
+            onclick="(()=>{
+              const {club, cats} = _getCoachFormValues();
+              saveCoachProfile(club, cats);
+            })()"
+            style="padding:10px 24px;font-size:13px">
+            💾 Enregistrer les modifications
+          </button>
+          <button class="btn btn-outline"
+            onclick="state.coachProfile=null;state.coachSelClub=null;state.coachCatSearch='';state.coachCatGroup='';renderPage()"
+            style="font-size:13px;padding:10px 18px">
+            🔄 Recharger
+          </button>
+          <button class="btn btn-outline"
+            style="font-size:12px;padding:10px 14px"
+            title="Affiche les valeurs stockées en base dans la console"
+            onclick="(async()=>{
+              const {data,error}=await _supabase.from('profiles').select('club,categories').eq('id',_supaUser.id).maybeSingle();
+              if(error){toast('Erreur: '+error.message,'error');return;}
+              const msg=data?'Club: '+(data.club||'(vide)')+' · Catégories: '+(data.categories?.length||0)+' cat.':'Aucun profil trouvé';
+              console.log('[Coach] Profil Supabase:',data);
+              toast('🔍 '+msg,'info');
+            })()">
+            🔍 Vérifier
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info schéma SQL -->
+    <div class="card" style="max-width:640px;margin-top:16px;border-left:3px solid var(--c-blue)">
+      <div class="card-body" style="padding:14px 18px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px">ℹ️ Configuration Supabase requise</div>
+        <p style="font-size:11px;color:var(--c-text3);margin-bottom:8px">
+          Si les champs club/catégories ne se sauvegardent pas, exécutez ce SQL dans votre dashboard Supabase :
+        </p>
+        <pre style="background:var(--c-surface2);border-radius:6px;padding:10px;font-size:10px;overflow-x:auto;color:var(--c-text)">ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS club text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS categories text[];</pre>
+      </div>
+    </div>`;
+}
+// Wrapper avec id pour cibler les checkboxes dans saveCoachProfile
+// (wrap dans un div#params-coach-page dans le return principal → géré par renderPage)
+
 function renderSelectionEquipe() {
   if (!state.results.length) return emptyState('Aucune donnée', 'Importez des données pour commencer.');
 
@@ -12015,7 +12343,164 @@ function showAbout() {
 
         ${[
           {
-            ver: '2.2.12', date: '16 mai 2026', current: true,
+            ver: '2.4.9', date: '18 mai 2026', current: true,
+            items: [
+              'Filtre coach admin : tri sur l\'email via localeCompare (insensible à la casse, locale fr)',
+              'Les IDs sans profil chargé tombent en fin de liste (fallback sur l\'UUID)',
+              'Passage en version v2.4.9',
+            ]
+          },
+          {
+            ver: '2.4.8', date: '18 mai 2026', current: false,
+            items: [
+              'Page Alertes admin : filtre coach affiche maintenant email + club + catégories (au lieu de l\'UUID)',
+              'loadCoachProfiles() : chargement lazy des profils coach (Map<id,{email,club,categories}>) — une seule fois par session',
+              'state.coachProfiles (Map) réutilisable dans d\'autres parties de l\'app',
+              'Labels tronqués à 60 chars dans le select + title avec le texte complet au survol',
+              'Passage en version v2.4.8',
+            ]
+          },
+          {
+            ver: '2.4.7', date: '18 mai 2026', current: false,
+            items: [
+              'Sidebar : show("nav-params-coach") corrigé de "block" → "flex" — rendu cohérent avec tous les autres .nav-item',
+              'Passage en version v2.4.7',
+            ]
+          },
+          {
+            ver: '2.4.6', date: '18 mai 2026', current: false,
+            items: [
+              'loadAlertes() + loadCoachProfile() : pattern finally{renderPage()} — renderPage() garanti dans tous les cas (succès, erreur, timeout)',
+              'Bouton "Forcer l\'affichage" remplace le lien href=javascript: non fonctionnel',
+              'Bouton Recalculer : DELETE des alertes existantes avant INSERT pour éviter l\'erreur 409 (contrainte unique)',
+              'Bouton Recalculer : disabled pendant le recalcul + try/catch + toast d\'état',
+              'Passage en version v2.4.6',
+            ]
+          },
+          {
+            ver: '2.4.5', date: '18 mai 2026', current: false,
+            items: [
+              'Correction affichage club : loadCoachProfile() remet coachSelClub=null après chargement Supabase, forçant _initParamsCoachIfNeeded à utiliser profile.club',
+              '_initParamsCoachIfNeeded : mémorise initClub dans coachSelClub dès la première init pour éviter de retomber sur vide aux renders suivants',
+              'Label "Enregistré : [Club]" visible sous l\'autocomplete pour confirmer la valeur persistée',
+              'Bouton "🔍 Vérifier" : affiche les valeurs réelles de la BDD dans un toast + console',
+              'saveCoachProfile : coachSelClub=null avant loadCoachProfile pour garantir une ré-init propre',
+              'Passage en version v2.4.5',
+            ]
+          },
+          {
+            ver: '2.4.4', date: '18 mai 2026', current: false,
+            items: [
+              'Correction alertes : upsert → insert ignoreDuplicates:true — évite l\'erreur "no unique constraint" sur colonnes nullable (agres=null)',
+              'Gestion erreur 23505 (violation unique) dans le batch insert — les doublons sont silencieusement ignorés',
+              'loadAlertes() : renderPage() appelé dans le catch — plus de page bloquée en chargement',
+              'renderAlertes() : lien de secours si l\'état reste bloqué',
+              'Passage en version v2.4.4',
+            ]
+          },
+          {
+            ver: '2.4.3', date: '18 mai 2026', current: false,
+            items: [
+              'Correction sauvegarde Profil Coach : le bouton Enregistrer lisait document.getElementById(coach-club) qui n\'existait plus depuis l\'autocomplete v2.3.4 — club toujours vide',
+              '_getCoachFormValues() : helper qui lit le club depuis l\'API autocomplete (_clubAC_) + les catégories depuis #coach-cats-grid',
+              'saveCoachProfile() : remplace upsert par UPDATE .eq(id) — préserve les autres colonnes du profil, log console, toast détaillé avec club + nb catégories',
+              'loadCoachProfile() : maybeSingle() remplace single() — plus d\'erreur PGRST116 si la ligne est absente',
+              'saveCoachProfileAdmin() : même correction UPDATE ciblé + mise à jour du cache _cachedUserProfiles',
+              'Passage en version v2.4.3',
+            ]
+          },
+          {
+            ver: '2.4.2', date: '18 mai 2026', current: false,
+            items: [
+              '_triggerAlertesForResults(results) : point de convergence unique post-import — extrait saisons+dates automatiquement',
+              'Tous les hooks d\'import (CSV, URL, JSON, multi-URLs, saveToSupabase) utilisent ce helper',
+              'Bouton "⚡ Recalculer" dans la page Alertes — recalcule sur toutes les saisons + recharge la liste',
+              'Toast explicite si la table alertes est absente',
+              'Logs améliorés dans detectAndStoreAlertes',
+              'Passage en version v2.4.2',
+            ]
+          },
+          {
+            ver: '2.4.1', date: '18 mai 2026', current: false,
+            items: [
+              '🆕 Interface Alertes : page dédiée accessible via 🔔 Alertes dans la sidebar',
+              'Badge de notification dans la sidebar (nombre d\'alertes non lues)',
+              'Cartes alertes avec type, perte en points, gymnaste, catégorie, club, date',
+              'Marquage individuel (clic sur la carte ou bouton ✓) et "Tout marquer comme lu"',
+              'Filtres : Toutes / Non lues — pagination 25 alertes/page',
+              'Admin : sélecteur pour filtrer par coach_id',
+              'Badge rechargé après chaque import + détection d\'alertes',
+              'Passage en version v2.4.1',
+            ]
+          },
+          {
+            ver: '2.4.0', date: '18 mai 2026', current: false,
+            items: [
+              '🆕 Système d\'Alertes Partie 1 : détection automatique des baisses de performance à chaque import',
+              'detectAndStoreAlertes(saison, opts) : analyse toutes les gymnastes de chaque coach (profil club+catégories) et détecte baisse_total (≥ 1.0 pt) et baisse_agres (≥ 0.8 pt)',
+              'Seuils ALERTE_SEUILS configurables par coach dans une version future',
+              'Upsert Supabase avec index UNIQUE (coach_id, saison, gymnaste_nom, gymnaste_prenom, type_alerte, agres) — pas de doublons',
+              'Hook déclenché après : import CSV, import URL, import JSON, import multi-URLs, saveToSupabase',
+              'Si table alertes absente (42P01) : message discret, pas de crash',
+              'Schema SQL table alertes documenté dans le code (commentaire en tête du JS)',
+              'Passage en version v2.4.0',
+            ]
+          },
+          {
+            ver: '2.3.4', date: '18 mai 2026', current: false,
+            items: [
+              'Remplacement du sélecteur de club par un champ de recherche autocomplete (_initClubAutocomplete)',
+              'Autocomplete : filtre en temps réel par nom de club, navigation clavier (↑↓ Enter Escape), badge de sélection avec bouton ✕',
+              'Option "Tous les clubs" toujours visible en tête de liste avec compteur total',
+              'Implémenté dans Paramètres Coach ET dans le panneau admin Gestion des utilisateurs',
+              'Passage en version v2.3.4',
+            ]
+          },
+          {
+            ver: '2.3.3', date: '18 mai 2026', current: false,
+            items: [
+              'Amélioration majeure de la sélection des catégories : filtrage par club + recherche debounced + filtres par groupe (G1 à GN)',
+              '_applyCoachCatFilter() : filtre DOM-based sans re-render (club + recherche + groupe combinables)',
+              '_initCoachCatControls() : attache les listeners sur les contrôles de filtre (search, groupe, club)',
+              'Panneau admin coach (Gestion utilisateurs) : refait avec la même UX de filtrage',
+              'Page Paramètres Coach : squelette HTML + _initParamsCoachIfNeeded() via requestAnimationFrame',
+              '_cachedUserProfiles : cache des profils utilisateurs pour pré-cocher les catégories sans re-fetcher',
+              'Passage en version v2.3.3',
+            ]
+          },
+          {
+            ver: '2.3.2', date: '16 mai 2026', current: false,
+            items: [
+              'Correction du filtrage catégories : state.coachSelClub (variable UI distincte de profile.club) déclenche correctement le re-render via _keyAnalyses',
+              'Initialisation automatique de coachSelClub à partir du profil Supabase au premier affichage',
+              'Le changement de club filtre immédiatement la liste des catégories sans attendre la sauvegarde',
+              'Bouton Enregistrer utilise state.coachSelClub (valeur UI) et non la valeur DOM du select',
+              'Passage en version v2.3.2',
+            ]
+          },
+          {
+            ver: '2.3.1', date: '16 mai 2026', current: false,
+            items: [
+              'Amélioration de la sélection des catégories : filtrage par club (sélectionner un club restreint la liste aux catégories de ce club)',
+              'Recherche debounce (cc-cat-search, 280ms) pour filtrer les catégories en temps réel',
+              'Filtres rapides par Groupe (Tous / G1 / G2 / G3 / G4 / GN) sous forme de boutons pills',
+              'Le changement de club réinitialise les filtres et met à jour state.coachProfile.club sans re-sauvegarder',
+              'Passage en version v2.3.1',
+            ]
+          },
+          {
+            ver: '2.3.0', date: '16 mai 2026', current: false,
+            items: [
+              '🆕 Gestion du profil Coach (v2.3.0) : un coach peut définir son club et ses catégories depuis "Paramètres Coach" dans la sidebar',
+              'Page Paramètres Coach : formulaire club (select dynamique) + catégories (cases à cocher) avec sauvegarde sécurisée dans Supabase (profiles.club + profiles.categories)',
+              'Admin — Gestion utilisateurs enrichie : bouton ⚙️ sur les lignes coach pour ouvrir/fermer un panneau en ligne (club + catégories) avec enregistrement direct',
+              'SQL requis : ALTER TABLE profiles ADD COLUMN IF NOT EXISTS club text; ADD COLUMN IF NOT EXISTS categories text[];',
+              'loadCoachProfile(), saveCoachProfile(), saveCoachProfileAdmin(), toggleCoachProfileAdmin()',
+              'Passage en version v2.3.0',
+            ]
+          },
+          {
+            ver: '2.2.12', date: '16 mai 2026', current: false,
             items: [
               'PDF gymnaste : graphique double-axe Y — axe gauche (bleu) pour le Total, axe droit (gris) pour les 4 agrès',
               'Les agrès ont leur propre échelle (min agrès - 1.2, max agrès + 1.2) — les variations sont clairement visibles',
@@ -13071,12 +13556,68 @@ function renderUsersTable(users) {
       </td>
       <td style="font-size:11px;color:var(--c-text2)">${fmt(u.created_at)}</td>
       <td style="font-size:11px;color:var(--c-text3)">${fmtTime(u.last_sign)}</td>
+      <td style="font-size:11px;color:var(--c-text3);max-width:120px">
+        ${roleVal==='coach' ? (u.club || '<span style="color:var(--c-text3);font-style:italic">—</span>') : ''}
+      </td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="resetUserPassword('${emailSafe}')"
           title="Envoyer un email de réinitialisation">📧 Reset MDP</button>
+        ${roleVal==='coach' ? `<button class="btn btn-outline btn-sm" style="margin-left:4px"
+          onclick="toggleCoachProfileAdmin('${u.id}')"
+          title="Modifier le profil coach (club + catégories)">⚙️</button>` : ''}
       </td>
-    </tr>`;
+    </tr>
+    ${roleVal==='coach' ? `<tr id="coach-admin-row-${u.id}" style="display:none">
+      <td colspan="7" style="background:var(--c-surface2);padding:14px 18px">
+        <!-- Panneau édition profil coach — id panel pour cibler les contrôles -->
+        <div id="coach-panel-${u.id}">
+          <div style="font-size:12px;font-weight:700;margin-bottom:10px;color:var(--c-blue)">
+            ⚙️ Profil Coach — ${u.email}
+          </div>
+          <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start">
+            <!-- Club — autocomplete (initialisé par toggleCoachProfileAdmin) -->
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--c-text2);display:block;margin-bottom:5px">🏢 Club</label>
+              <div id="admin-coach-club-ac-${u.id}"></div>
+              <!-- Valeur cachée pour saveCoachProfileAdmin -->
+              <input type="hidden" id="admin-coach-club-${u.id}" value="${u.club||''}">
+            </div>
+            <!-- Catégories avec filtres -->
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--c-text2);display:block;margin-bottom:6px">🎯 Catégories</label>
+              <!-- Boutons groupe -->
+              <div class="coach-group-bar" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px"></div>
+              <!-- Recherche -->
+              <div style="position:relative;margin-bottom:6px">
+                <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--c-text3)">🔍</span>
+                <input class="coach-cat-search" type="search" placeholder="Filtrer les catégories…"
+                  style="width:100%;padding:5px 8px 5px 26px;border-radius:6px;border:1px solid var(--c-border);
+                         background:var(--c-surface2);color:var(--c-text);font-size:11px;box-sizing:border-box">
+              </div>
+              <!-- Grille catégories (remplie par _initCoachCatControls) -->
+              <div id="admin-coach-cats-${u.id}"
+                style="display:flex;flex-wrap:wrap;gap:5px;padding:8px;background:var(--c-surface);
+                       border:1px solid var(--c-border);border-radius:6px;min-height:60px;max-height:220px;overflow-y:auto">
+                <span style="font-size:11px;color:var(--c-text3)">Chargement…</span>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm"
+              onclick="saveCoachProfileAdmin('${u.id}','${emailSafe}','coach')"
+              style="font-size:12px">💾 Enregistrer</button>
+            <button class="btn btn-outline btn-sm" style="font-size:12px"
+              onclick="toggleCoachProfileAdmin('${u.id}')">✕ Fermer</button>
+          </div>
+        </div>
+      </td>
+    </tr>` : ''}`;
   }).join('');
+
+  // Cache des profils pour pré-cocher les catégories à l'ouverture du panneau
+  window._cachedUserProfiles = Object.fromEntries(
+    users.map(u => [u.id, { club: u.club || '', categories: u.categories || [] }])
+  );
 
   const usedRpc     = !document.getElementById('users-sql-hint') || document.getElementById('users-sql-hint').style.display === 'none';
   const methodBadge = usedRpc
@@ -13184,6 +13725,217 @@ async function loadUsersList() {
   }
 }
 
+/**
+ * Sauvegarde le profil coach (club + catégories) depuis la page admin.
+ * Accessible uniquement aux admins.
+ */
+async function saveCoachProfileAdmin(userId, email, role) {
+  if (!_supabase || _supaRole !== 'admin') return;
+  const club = window[`_clubAC_admin-coach-club-ac-${userId}`]?.getValue()
+    ?? document.getElementById(`admin-coach-club-${userId}`)?.value ?? null;
+  const cats = [...(document.querySelectorAll(`#admin-coach-cats-${userId} .cat-cb:checked`) || [])]
+    .map(cb => cb.value);
+
+  const clubVal = (club || '').trim() || null;
+  const catsVal = cats.length ? cats : null;
+
+  console.log('[Admin] Sauvegarde profil coach', userId, { clubVal, catsVal });
+
+  try {
+    // UPDATE ciblé : ne touche que club + categories, préserve le reste
+    const { error } = await _supabase
+      .from('profiles')
+      .update({ club: clubVal, categories: catsVal })
+      .eq('id', userId);
+    if (error) throw error;
+    // Mettre à jour le cache local
+    if (window._cachedUserProfiles?.[userId]) {
+      window._cachedUserProfiles[userId].club = clubVal || '';
+      window._cachedUserProfiles[userId].categories = catsVal || [];
+    }
+    toast(`✅ Profil coach mis à jour — ${clubVal || '(aucun club)'} · ${(catsVal||[]).length} cat.`, 'success');
+  } catch(e) {
+    console.error('[Admin] saveCoachProfileAdmin:', e);
+    toast('❌ Erreur : ' + e.message, 'error');
+  }
+}
+
+function toggleCoachProfileAdmin(userId) {
+  const row = document.getElementById('coach-admin-row-' + userId);
+  if (!row) return;
+  const opening = row.style.display === 'none';
+  row.style.display = opening ? 'table-row' : 'none';
+  if (opening) {
+    requestAnimationFrame(() => {
+      const userProfile = window._cachedUserProfiles?.[userId] || {};
+      const initClub    = userProfile.club || '';
+      const selected    = userProfile.categories || [];
+      const allClubs    = [...new Set(state.results.map(r => normalizeClub(r.club)).filter(Boolean))].sort();
+
+      // Autocomplete club
+      _initClubAutocomplete(`admin-coach-club-ac-${userId}`, allClubs, initClub, (club) => {
+        // Mettre à jour le champ caché + filtrer les catégories
+        const hidden = document.getElementById(`admin-coach-club-${userId}`);
+        if (hidden) hidden.value = club;
+        _applyCoachCatFilter(`admin-coach-cats-${userId}`, club, '', '', selected);
+        _initCoachCatControls(`coach-panel-${userId}`, `admin-coach-cats-${userId}`, selected, club);
+      });
+
+      // Contrôles catégories
+      _initCoachCatControls('coach-panel-' + userId, 'admin-coach-cats-' + userId, selected, initClub);
+    });
+  }
+}
+
+// ── Filtrage dynamique des catégories (DOM-based, sans re-render) ─────────
+// Utilisé par le panneau admin ET la page Paramètres Coach.
+
+/**
+ * Retourne les catégories disponibles pour un club donné.
+ * @param {string} club - '' = tous les clubs
+ * @returns {string[]} catégories triées
+ */
+function _getCatsForClub(club) {
+  const src = club
+    ? state.results.filter(r => normalizeClub(r.club) === club)
+    : state.results;
+  return [...new Set(src.map(r => r.categorie).filter(Boolean))].sort();
+}
+
+/**
+ * Retourne les catégories d'un groupe donné (depuis les données).
+ * @param {string} group - 'G1'|'G2'|...|'' = tous
+ * @returns {Set<string>}
+ */
+function _getCatsForGroup(group) {
+  if (!group) return null; // null = pas de filtre groupe
+  return new Set(state.results.filter(r => r.groupe === group).map(r => r.categorie).filter(Boolean));
+}
+
+/**
+ * Filtre et affiche les catégories dans un conteneur donné.
+ * @param {string} containerId  - id du div contenant les labels
+ * @param {string} club         - club sélectionné ('' = tous)
+ * @param {string} search       - texte de recherche
+ * @param {string} group        - groupe actif ('G1' etc. ou '' = tous)
+ * @param {string[]} selected   - catégories déjà cochées
+ */
+function _applyCoachCatFilter(containerId, club, search, group, selected) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const allCats   = _getCatsForClub(club);
+  const groupSet  = _getCatsForGroup(group);
+  const searchLC  = (search || '').toLowerCase().trim();
+
+  const filtered = allCats.filter(c => {
+    if (groupSet  && !groupSet.has(c))                  return false;
+    if (searchLC  && !c.toLowerCase().includes(searchLC)) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    container.innerHTML = `<span style="font-size:12px;color:var(--c-text3);padding:4px">
+      ${allCats.length ? 'Aucune catégorie ne correspond à ce filtre.' : 'Aucune catégorie disponible.'}
+    </span>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(cat => {
+    const checked = (selected || []).includes(cat);
+    return `<label style="display:flex;align-items:center;gap:6px;padding:4px 9px;border-radius:6px;
+                cursor:pointer;font-size:11px;min-width:140px;flex:1;max-width:220px;
+                background:${checked?'rgba(0,63,138,.12)':'transparent'};
+                border:1px solid ${checked?'var(--c-blue)':'var(--c-border)'}">
+      <input type="checkbox" class="cat-cb" value="${cat}" ${checked?'checked':''}
+        onchange="(()=>{var lb=this.closest('label');
+          lb.style.background=this.checked?'rgba(0,63,138,.12)':'transparent';
+          lb.style.borderColor=this.checked?'var(--c-blue)':'var(--c-border)'})()">
+      ${cat}
+    </label>`;
+  }).join('');
+}
+
+/**
+ * Initialise les contrôles de filtre (recherche + boutons groupe) pour un panneau coach.
+ * @param {string} panelId      - id du div englobant (pour cibler les éléments)
+ * @param {string} containerId  - id du div des catégories
+ * @param {string[]} selected   - catégories déjà sélectionnées (profil actuel)
+ * @param {string}  initClub    - club initial
+ */
+function _initCoachCatControls(panelId, containerId, selected, initClub) {
+  const panel     = document.getElementById(panelId);
+  const container = document.getElementById(containerId);
+  if (!panel || !container) return;
+
+  let currentClub   = initClub || '';
+  let currentSearch = '';
+  let currentGroup  = '';
+  let debounceTimer = null;
+
+  // ── Boutons groupe ──────────────────────────────────────────────────
+  const allGroups = [...new Set(state.results.map(r => r.groupe).filter(Boolean))].sort();
+  const groupBar  = panel.querySelector('.coach-group-bar');
+  if (groupBar) {
+    groupBar.innerHTML = ['', ...allGroups].map(g => `
+      <button class="cgb ${g===currentGroup?'cgb-active':''}" data-g="${g}"
+        style="padding:3px 10px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;
+               border:1.5px solid ${g===currentGroup?'var(--c-blue)':'var(--c-border)'};
+               background:${g===currentGroup?'var(--c-blue)':'transparent'};
+               color:${g===currentGroup?'#fff':'var(--c-text2)'}">${g||'Tous'}</button>
+    `).join('');
+    groupBar.addEventListener('click', e => {
+      const btn = e.target.closest('.cgb');
+      if (!btn) return;
+      currentGroup = btn.dataset.g;
+      groupBar.querySelectorAll('.cgb').forEach(b => {
+        const active = b.dataset.g === currentGroup;
+        b.style.background    = active ? 'var(--c-blue)' : 'transparent';
+        b.style.borderColor   = active ? 'var(--c-blue)' : 'var(--c-border)';
+        b.style.color         = active ? '#fff' : 'var(--c-text2)';
+      });
+      _applyCoachCatFilter(containerId, currentClub, currentSearch, currentGroup, getChecked());
+    });
+  }
+
+  // ── Recherche debounce ──────────────────────────────────────────────
+  const searchInput = panel.querySelector('.coach-cat-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', e => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        currentSearch = e.target.value;
+        _applyCoachCatFilter(containerId, currentClub, currentSearch, currentGroup, getChecked());
+      }, 280);
+    });
+  }
+
+  // ── Select club (s'il existe dans le panel) ─────────────────────────
+  const clubSelect = panel.querySelector('.coach-club-select');
+  if (clubSelect) {
+    clubSelect.addEventListener('change', e => {
+      currentClub   = e.target.value;
+      currentSearch = '';
+      currentGroup  = '';
+      if (searchInput) searchInput.value = '';
+      if (groupBar) groupBar.querySelectorAll('.cgb').forEach(b => {
+        b.style.background  = b.dataset.g === '' ? 'var(--c-blue)' : 'transparent';
+        b.style.borderColor = b.dataset.g === '' ? 'var(--c-blue)' : 'var(--c-border)';
+        b.style.color       = b.dataset.g === '' ? '#fff' : 'var(--c-text2)';
+      });
+      _applyCoachCatFilter(containerId, currentClub, currentSearch, currentGroup, getChecked());
+    });
+  }
+
+  // Lire les catégories actuellement cochées (avant re-render)
+  function getChecked() {
+    return [...(container.querySelectorAll('.cat-cb:checked') || [])].map(cb => cb.value);
+  }
+
+  // Rendu initial
+  _applyCoachCatFilter(containerId, currentClub, currentSearch, currentGroup, selected);
+}
+
 async function changeUserRole(userId, newRole, email) {
   try {
     // Upsert : crée le profil s'il n'existe pas encore
@@ -13191,6 +13943,7 @@ async function changeUserRole(userId, newRole, email) {
       id:    userId,
       email: email || '',
       role:  newRole,
+      // club et categories conservés inchangés lors du changement de rôle
     }, { onConflict: 'id' });
     if (error) throw error;
     toast(`✅ Rôle ${newRole} attribué à ${email || userId}`, 'success');
@@ -13346,7 +14099,190 @@ function initCompareChart() {
    - Recherche avec debounce 500ms → pas de re-render à chaque frappe
    - Filtres selects : invalide le cache puis re-render
 ========================================================= */
+// ── Hook post-render pour params_coach ───────────────────────────────────
+// ── Club Autocomplete Component ─────────────────────────────────────────
+/**
+ * Crée un widget autocomplete pour sélectionner un club.
+ * @param {string}   containerId   - id du div hôte
+ * @param {string[]} allClubs      - liste de tous les clubs
+ * @param {string}   initialValue  - valeur initiale
+ * @param {Function} onSelect      - callback(club) appelé à la sélection
+ */
+function _initClubAutocomplete(containerId, allClubs, initialValue, onSelect) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  let selected = initialValue || '';
+  let highlighted = -1;
+
+  container.innerHTML = `
+    <div style="position:relative">
+      <div style="position:relative">
+        <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);
+                     font-size:13px;color:var(--c-text3);pointer-events:none">🔍</span>
+        <input id="${containerId}-input" type="search"
+          placeholder="Rechercher un club…"
+          autocomplete="off"
+          value="${selected ? selected.replace(/"/g,'&quot;') : ''}"
+          style="width:100%;padding:7px 9px 7px 30px;border-radius:8px;
+                 border:1.5px solid var(--c-border);background:var(--c-surface);
+                 color:var(--c-text);font-size:13px;box-sizing:border-box">
+      </div>
+      ${selected ? `<div id="${containerId}-badge"
+        style="margin-top:5px;display:inline-flex;align-items:center;gap:6px;
+               padding:3px 10px;border-radius:12px;background:var(--c-blue);
+               color:#fff;font-size:12px;font-weight:600">
+        🏢 ${selected}
+        <span style="cursor:pointer;opacity:.7;font-size:10px"
+          onclick="window['_clubAC_${containerId}']?.clearSelection()">✕</span>
+      </div>` : ''}
+      <div id="${containerId}-list" style="display:none;position:absolute;z-index:900;left:0;right:0;
+        top:100%;margin-top:2px;background:var(--c-surface);border:1.5px solid var(--c-blue);
+        border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.15);max-height:260px;overflow-y:auto">
+      </div>
+    </div>`;
+
+  const input   = document.getElementById(`${containerId}-input`);
+  const list    = document.getElementById(`${containerId}-list`);
+
+  function renderList(query) {
+    const q   = (query || '').toLowerCase().trim();
+    const hits = q ? allClubs.filter(c => c.toLowerCase().includes(q)) : allClubs;
+    highlighted = -1;
+
+    if (!hits.length) {
+      list.innerHTML = `<div style="padding:10px 14px;font-size:13px;color:var(--c-text3)">Aucun club trouvé</div>`;
+    } else {
+      list.innerHTML = hits.map((c, i) => {
+        const isSelected = c === selected;
+        let label = c;
+        if (q) {
+          // Highlight sans regex complexe : split/join sur la correspondance
+          const idx = c.toLowerCase().indexOf(q.toLowerCase());
+          if (idx >= 0) {
+            label = c.slice(0, idx)
+              + '<strong style="color:var(--c-blue)">' + c.slice(idx, idx + q.length) + '</strong>'
+              + c.slice(idx + q.length);
+          }
+        }
+        return `<div class="club-ac-item" data-club="${c.replace(/"/g,'&quot;')}"
+          style="padding:8px 14px;cursor:pointer;font-size:13px;
+                 background:${isSelected?'rgba(0,63,138,.08)':'transparent'};
+                 border-left:3px solid ${isSelected?'var(--c-blue)':'transparent'};
+                 display:flex;align-items:center;gap:8px"
+          onmouseover="this.style.background='rgba(0,63,138,.06)'"
+          onmouseout="this.style.background='${isSelected?'rgba(0,63,138,.08)':'transparent'}'">
+          ${isSelected?'<span style="font-size:10px;color:var(--c-blue)">✓</span>':'<span style="font-size:10px;opacity:0">✓</span>'}
+          ${label}
+        </div>`;
+      }).join('');
+      list.insertAdjacentHTML('afterbegin', `<div class="club-ac-item" data-club=""
+        style="padding:8px 14px;cursor:pointer;font-size:12px;color:var(--c-text3);
+               border-bottom:1px solid var(--c-border);display:flex;align-items:center;gap:8px"
+        onmouseover="this.style.background='rgba(0,63,138,.04)'"
+        onmouseout="this.style.background='transparent'">
+        <span style="font-size:10px;opacity:0">✓</span>
+        Tous les clubs (pas de filtre)
+        <span style="margin-left:auto;font-size:10px">${allClubs.length} clubs</span>
+      </div>`);
+    }
+    list.style.display = 'block';
+    list.querySelectorAll('.club-ac-item').forEach(item => {
+      item.addEventListener('click', () => selectClub(item.dataset.club));
+    });
+  }
+
+    function selectClub(club) {
+    selected = club;
+    input.value = club;
+    list.style.display = 'none';
+    // Mettre à jour le badge
+    const badge = document.getElementById(`${containerId}-badge`);
+    if (badge) badge.remove();
+    if (club) {
+      input.insertAdjacentHTML('afterend', `<div id="${containerId}-badge"
+        style="margin-top:5px;display:inline-flex;align-items:center;gap:6px;
+               padding:3px 10px;border-radius:12px;background:var(--c-blue);
+               color:#fff;font-size:12px;font-weight:600">
+        🏢 ${club}
+        <span style="cursor:pointer;opacity:.7;font-size:10px"
+          onclick="window['_clubAC_${containerId}']?.clearSelection()">✕</span>
+      </div>`);
+    }
+    if (onSelect) onSelect(club);
+  }
+
+  // Navigation clavier
+  input.addEventListener('keydown', e => {
+    const items = [...list.querySelectorAll('.club-ac-item')];
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      highlighted = Math.min(highlighted + 1, items.length - 1);
+      items.forEach((it, i) => it.style.background = i === highlighted ? 'rgba(0,63,138,.1)' : '');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      highlighted = Math.max(highlighted - 1, 0);
+      items.forEach((it, i) => it.style.background = i === highlighted ? 'rgba(0,63,138,.1)' : '');
+    } else if (e.key === 'Enter' && highlighted >= 0 && items[highlighted]) {
+      selectClub(items[highlighted].dataset.club);
+    } else if (e.key === 'Escape') {
+      list.style.display = 'none';
+    }
+  });
+
+  input.addEventListener('input', e => renderList(e.target.value));
+  input.addEventListener('focus', () => renderList(input.value));
+
+  // Fermer en cliquant ailleurs
+  document.addEventListener('click', e => {
+    if (!container.contains(e.target)) list.style.display = 'none';
+  }, { capture: false });
+
+  // API publique pour reset
+  window[`_clubAC_${containerId}`] = {
+    // clear() : reset programmatique (appelé par d'autres fonctions)
+    clear: () => { selected = ''; if (onSelect) onSelect(''); },
+    // clearSelection() : appelé par le ✕ du badge (accès DOM garanti)
+    clearSelection: () => {
+      selected = '';
+      input.value = '';
+      list.style.display = 'none';
+      document.getElementById(`${containerId}-badge`)?.remove();
+      if (onSelect) onSelect('');
+    },
+    getValue: () => selected,
+  };
+}
+
+function _initParamsCoachIfNeeded() {
+  if (state.currentPage !== 'params_coach') return;
+  if (!document.getElementById('coach-cats-grid')) return;
+
+  const profile   = state.coachProfile || {};
+  const selCats   = profile.categories || [];
+  // Priorité : coachSelClub (modifié par l'utilisateur) > profile.club (Supabase)
+  // coachSelClub=null = pas encore initialisé → prendre profile.club
+  const initClub  = state.coachSelClub !== null ? state.coachSelClub : (profile.club || '');
+  // Mémoriser pour éviter que le prochain render repasse à ''
+  if (state.coachSelClub === null) state.coachSelClub = initClub;
+
+  const allClubs  = [...new Set(state.results.map(r => normalizeClub(r.club)).filter(Boolean))].sort();
+
+  // 1. Initialiser l'autocomplete club avec la valeur du profil Supabase
+  _initClubAutocomplete('coach-club-ac', allClubs, initClub, (club) => {
+    state.coachSelClub = club;
+    _applyCoachCatFilter('coach-cats-grid', club, '', '', selCats);
+    _initCoachCatControls('coach-params-panel', 'coach-cats-grid', selCats, club);
+  });
+
+  // 2. Initialiser les contrôles de filtre catégories avec le club initial
+  _initCoachCatControls('coach-params-panel', 'coach-cats-grid', selCats, initClub);
+}
+
 function bindPageEvents() {
+  // Initialiser les filtres catégories coach si nécessaire
+  requestAnimationFrame(() => _initParamsCoachIfNeeded());
+
   // ── Tabs ──────────────────────────────────────────────────
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -13420,6 +14356,9 @@ function bindPageEvents() {
       } else if (id === 'se-search') {
         // Debounce géré par bindPageEvents — recherche dans Sélection d'équipe
         if (state.seSearch !== val) { state.seSearch = val; stateChanged = true; }
+      } else if (id === 'cc-cat-search') {
+        // Debounce recherche catégories Paramètres Coach
+        if (state.coachCatSearch !== val) { state.coachCatSearch = val; stateChanged = true; }
       } else {
         if (state.filterSearch !== val) { state.filterSearch = val; state.tablePage = 1; stateChanged = true; }
       }
@@ -13565,6 +14504,7 @@ function doImport() {
     );
     deriveCompetitions(); saveData();
     toast(`${parsed.length} résultats importés avec succès !`, 'success');
+    _triggerAlertesForResults(parsed, false).catch(console.warn);
     closeModal();
     navigate('gymnastes');
   }
@@ -13590,6 +14530,7 @@ function doImport() {
     deriveCompetitions(); saveData();
     _urlPreviewData = null;
     toast(`${individuals.length} gymnastes · ${teams?.length||0} équipes importés !`, 'success');
+    _triggerAlertesForResults(individuals, false).catch(console.warn);
     closeModal();
     navigate('gymnastes');
   }
@@ -13604,6 +14545,7 @@ function doImport() {
       pushResults(data, []);
       deriveCompetitions(); saveData();
       toast(`${data.length} résultats importés !`, 'success');
+      _triggerAlertesForResults(data, false).catch(console.warn);
       closeModal();
       navigate('gymnastes');
     } catch(e) { toast('JSON invalide : ' + e.message, 'error'); }
@@ -13852,11 +14794,14 @@ async function importMultipleUrls() {
   if (finalBtn) { finalBtn.disabled = false; finalBtn.textContent = 'Importer'; }
 
   // 2. Toast
-  if (errors === 0 && totalInd > 0)
-    toast(`✅ ${total} palmarès importés — ${totalInd} gymnastes · ${totalTeams} équipes`, 'success');
-  else if (errors > 0)
-    toast(`Import terminé avec ${errors} erreur${errors>1?'s':''}.`, 'error');
-
+  if (errors === 0 && totalInd > 0) {
+    toast(`\u2705 ${total} palm\u00e0r\u00e8s import\u00e9s \u2014 ${totalInd} gymnastes \u00b7 ${totalTeams} \u00e9quipes`, 'success');
+    // Analyser les résultats récemment importés (les N derniers)
+    const _recentResults = state.results.slice(-totalInd);
+    _triggerAlertesForResults(_recentResults, false).catch(console.warn);
+  } else if (errors > 0) {
+    toast(`Import termin\u00e9 avec ${errors} erreur${errors>1?'s':''}.`, 'error');
+  }
   // 3. Fermer le modal et rafraîchir l'UI
   if (errors === 0 && totalInd > 0) {
       setTimeout(() => {
@@ -14250,7 +15195,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
-const APP_VERSION = '2.2.12';
+const APP_VERSION = '2.4.9';
 
 // Mettre à jour l'affichage de la version dès que le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
@@ -14621,6 +15566,12 @@ function updateSidebarUser() {
 
   // ══ Section 2b : Outils Coach ══════════════════════════════
   show('section-outils-coach', !isLecteur, 'block');
+  // Paramètres Coach uniquement pour le rôle "coach" (pas admin qui gère depuis users)
+  show('nav-params-coach', _supaRole === 'coach', 'flex');
+  // Alertes : visible pour coach + admin — charger le badge
+  if (_supaRole === 'coach' || _supaRole === 'admin') {
+    loadAlertes().catch(console.warn);
+  }
 
   // ══ Section 4 : Administration ══════════════════════════════
   // Visible uniquement pour les admins
@@ -14717,6 +15668,608 @@ async function loadDataFromSupabase() {
 }
 
 // ── Sauvegarde vers Supabase ──────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════════════
+// SYSTÈME D'ALERTES — v2.4.0
+// Détecte les baisses de performance après import et stocke les alertes
+// dans la table Supabase `alertes`.
+// ═══════════════════════════════════════════════════════════════════════
+
+/** Seuils par défaut (configurables par coach dans une version future) */
+const ALERTE_SEUILS = {
+  baisse_total:  1.0,   // perte ≥ 1.0 pt sur le total
+  baisse_agres:  0.8,   // perte ≥ 0.8 pt sur un agrès
+};
+
+/**
+ * Calcule l'écart-type d'un tableau de valeurs.
+ */
+function _stdDev(vals) {
+  if (vals.length < 2) return 0;
+  const m = vals.reduce((s, v) => s + v, 0) / vals.length;
+  return Math.sqrt(vals.reduce((s, v) => s + (v - m) ** 2, 0) / vals.length);
+}
+
+/**
+ * Pour une gymnaste + agrès, calcule sa moyenne sur les N dernières compétitions
+ * en excluant les dates de la dernière compétition importée.
+ */
+function _getAvgBeforeDate(results, nom, prenom, agCode, beforeDate) {
+  const vals = results
+    .filter(r => r.nom === nom && r.prenom === prenom
+      && r.date < beforeDate
+      && (r.agres?.[agCode]?.final || 0) > 0)
+    .map(r => r.agres[agCode].final);
+  return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+}
+
+/**
+ * Point d'entrée principal : détecte les alertes après un import de données.
+ * @param {string} saison  - Saison des données importées (ex: "2025-2026")
+ * @param {object} opts
+ *   @param {string[]} opts.newDates   - Dates des nouvelles compétitions ajoutées
+ *   @param {boolean}  opts.silent     - true = pas de toast de résultat
+ */
+// ═══════════════════════════════════════════════════════════════════════
+// INTERFACE ALERTES — v2.4.1
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Charge les alertes depuis Supabase pour le coach connecté (ou toutes pour un admin).
+ * Met à jour state.alertesList et le badge de la sidebar.
+ */
+/**
+ * Charge les profils coach (email + club + catégories) depuis Supabase.
+ * Lazy : ne charge qu'une seule fois sauf si forceReload.
+ * Stocké dans state.coachProfiles (Map<id, {email, club, categories[]}>).
+ */
+async function loadCoachProfiles(forceReload = false) {
+  if (!_supabase || _supaRole !== 'admin') return;
+  if (state.coachProfiles !== null && !forceReload) return; // déjà chargé
+
+  try {
+    const { data, error } = await _supabase
+      .from('profiles')
+      .select('id, email, club, categories')
+      .eq('role', 'coach')
+      .order('email');
+    if (error) throw error;
+
+    state.coachProfiles = new Map(
+      (data || []).map(p => [p.id, {
+        email:      p.email || '(email inconnu)',
+        club:       p.club  || null,
+        categories: p.categories || [],
+      }])
+    );
+    console.log(`[CoachProfiles] ${state.coachProfiles.size} coach(s) chargé(s)`);
+  } catch(e) {
+    console.warn('[CoachProfiles]', e.message);
+    state.coachProfiles = new Map(); // Map vide → évite les rechargements en boucle
+  }
+}
+
+async function loadAlertes(forceReload = false) {
+  if (!_supabase || !_supaUser) {
+    state.alertesList = [];
+    renderPage();
+    return;
+  }
+  // Eviter le double chargement sauf si forceReload
+  if (state.alertesList !== null && !forceReload) return;
+
+  // Marquer immédiatement null pour éviter re-entrée
+  state.alertesList = null;
+
+  // Charger les profils coach pour l'admin (lazy, une seule fois)
+  if (_supaRole === 'admin' && state.coachProfiles === null) {
+    await loadCoachProfiles();
+  }
+
+  try {
+    let query = _supabase
+      .from('alertes')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (_supaRole === 'admin' && state.alertesAdminCoach) {
+      query = query.eq('coach_id', state.alertesAdminCoach);
+    } else if (_supaRole === 'coach') {
+      query = query.eq('coach_id', _supaUser.id);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    state.alertesList = data || [];
+    _updateAlertesBadge();
+  } catch(e) {
+    state.alertesList = [];  // sortir de null dans tous les cas
+    if (e.code === '42P01') {
+      console.warn('[Alertes] Table alertes absente');
+      toast('Table alertes introuvable — exécutez le SQL de création (changelog v2.4.0)', 'error');
+    } else {
+      console.warn('[Alertes] loadAlertes:', e.code, e.message);
+    }
+  } finally {
+    // renderPage() TOUJOURS appelé, succès ou erreur
+    renderPage();
+  }
+}
+
+/**
+ * Met à jour le badge de la sidebar avec le nombre d'alertes non lues.
+ */
+function _updateAlertesBadge() {
+  const badge = document.getElementById('nav-alertes-count');
+  if (!badge) return;
+  const unread = (state.alertesList || []).filter(a => !a.lu).length;
+  if (unread > 0) {
+    badge.textContent = unread > 99 ? '99+' : unread;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+/**
+ * Marque une alerte comme lue dans Supabase + met à jour l'état local.
+ */
+async function markAlerteLue(alerteId) {
+  if (!_supabase) return;
+  try {
+    const { error } = await _supabase
+      .from('alertes')
+      .update({ lu: true })
+      .eq('id', alerteId);
+    if (error) throw error;
+    if (state.alertesList) {
+      const a = state.alertesList.find(x => x.id === alerteId);
+      if (a) a.lu = true;
+    }
+    _updateAlertesBadge();
+    renderPage();
+  } catch(e) { console.warn('[Alertes] markAlerteLue:', e.message); }
+}
+
+/**
+ * Marque toutes les alertes visibles comme lues.
+ */
+async function markAllAlertesLues() {
+  if (!_supabase || !state.alertesList?.length) return;
+  const unreadIds = state.alertesList.filter(a => !a.lu).map(a => a.id);
+  if (!unreadIds.length) return;
+  try {
+    const { error } = await _supabase
+      .from('alertes')
+      .update({ lu: true })
+      .in('id', unreadIds);
+    if (error) throw error;
+    state.alertesList.forEach(a => { if (unreadIds.includes(a.id)) a.lu = true; });
+    _updateAlertesBadge();
+    renderPage();
+  } catch(e) { console.warn('[Alertes] markAllAlertesLues:', e.message); }
+}
+
+/**
+ * Renderer principal de la page Alertes.
+ */
+function renderAlertes() {
+  if (!_supabase) {
+    return `<div class="empty-state"><div class="empty-icon">📶</div>
+      <h3>Mode hors-ligne</h3><p>Les alertes nécessitent une connexion Supabase.</p></div>`;
+  }
+
+  // Déclencher le chargement si pas encore fait (null ou undefined)
+  if (state.alertesList == null) {
+    loadAlertes(true); // async → rappellera renderPage() quand prêt
+    return `<div class="section-title">🔔 Alertes</div>
+      <div style="text-align:center;padding:40px;color:var(--c-text3)">
+        <div style="font-size:32px;margin-bottom:12px">⏳</div>
+        <div>Chargement des alertes…</div>
+        <div style="font-size:12px;margin-top:10px">
+          <button onclick="state.alertesList=[];renderPage()"
+            style="background:none;border:1px solid var(--c-blue);color:var(--c-blue);
+                   padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px">
+            Forcer l'affichage
+          </button>
+        </div>
+      </div>`;
+  }
+
+  const allAlertes  = state.alertesList || [];
+  const filter      = state.alertesFilter;
+  const PAGE_SIZE   = 25;
+  const page        = state.alertesPage;
+  const SEL         = 'font-size:12px;padding:5px 9px;border-radius:7px;border:1px solid var(--c-border);background:var(--c-surface);color:var(--c-text)';
+
+  // Filtrer
+  let displayed = filter === 'unread' ? allAlertes.filter(a => !a.lu) : allAlertes;
+  const total   = displayed.length;
+  const unread  = allAlertes.filter(a => !a.lu).length;
+  // Paginer
+  const pageAlertes = displayed.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE);
+  const totalPages  = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // ── En-tête + filtres ────────────────────────────────────────────────
+  const headerHtml = `
+    <div class="section-title">🔔 Alertes</div>
+    <div class="section-sub">Baisses de performance détectées automatiquement à l'import</div>
+
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <!-- Filtres -->
+      <div style="display:flex;gap:4px">
+        ${['all','unread'].map(f => {
+          const labels = { all:'Toutes', unread:'Non lues' };
+          const active = filter === f;
+          return `<button onclick="state.alertesFilter='${f}';state.alertesPage=1;renderPage()"
+            style="padding:5px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;
+                   border:1.5px solid ${active?'var(--c-blue)':'var(--c-border)'};
+                   background:${active?'var(--c-blue)':'transparent'};
+                   color:${active?'#fff':'var(--c-text2)'}">
+            ${labels[f]}${f==='unread'&&unread>0?` <span style="background:rgba(255,255,255,.3);border-radius:10px;padding:0 5px">${unread}</span>`:''}
+          </button>`;
+        }).join('')}
+      </div>
+
+      <!-- Admin : filtre par coach (enrichi avec email + club + catégories) -->
+      ${_supaRole === 'admin' ? `
+      <div style="margin-left:8px">
+        <select style="${SEL}" onchange="state.alertesAdminCoach=this.value;state.alertesList=null;state.alertesPage=1;renderPage()">
+          <option value="">Tous les coachs</option>
+          ${(() => {
+              const coachIds = [...new Set(allAlertes.map(a => a.coach_id).filter(Boolean))];
+              const sorted = coachIds.sort((a, b) => {
+                const ea = (state.coachProfiles?.get(a)?.email || a).toLowerCase();
+                const eb = (state.coachProfiles?.get(b)?.email || b).toLowerCase();
+                return ea.localeCompare(eb, 'fr', { sensitivity: 'base' });
+              });
+              return sorted.map(id => {
+                const p = state.coachProfiles?.get(id);
+                if (!p) return `<option value="${id}" ${id===state.alertesAdminCoach?'selected':''}>${id.slice(0,8)}…</option>`;
+                const club = p.club || '(Club non configuré)';
+                const cats = p.categories?.length
+                  ? p.categories.slice(0, 3).join(', ') + (p.categories.length > 3 ? '…' : '')
+                  : '(Aucune catégorie)';
+                const label = `${p.email} — ${club} (${cats})`;
+                return `<option value="${id}" ${id===state.alertesAdminCoach?'selected':''}
+                  title="${label}">${label.length > 60 ? label.slice(0, 57) + '…' : label}</option>`;
+              }).join('');
+            })()}
+        </select>
+      </div>` : ''}
+
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <span style="font-size:12px;color:var(--c-text3)">${total} alerte${total>1?'s':''}</span>
+        ${unread > 0 ? `<button class="btn btn-outline btn-sm" onclick="markAllAlertesLues()"
+          style="font-size:12px">✓ Tout marquer comme lu</button>` : ''}
+        <button class="btn btn-outline btn-sm" onclick="state.alertesList=null;renderPage()"
+          style="font-size:12px" title="Actualiser la liste">🔄</button>
+        <button class="btn btn-outline btn-sm"
+          style="font-size:12px"
+          title="Recalculer toutes les alertes sur les données actuelles"
+          onclick="(async()=>{
+            const btn=event.currentTarget;
+            btn.disabled=true;btn.textContent='⏳ Recalcul...';
+            try{
+              toast('Suppression des anciennes alertes...','info');
+              if(_supaRole==='coach'&&_supaUser){
+                try{ await _supabase.from('alertes').delete().eq('coach_id',_supaUser.id); }catch(e){ console.warn('delete alertes:',e); }
+              }else if(_supaRole==='admin'){
+                try{ await _supabase.from('alertes').delete().neq('id','00000000-0000-0000-0000-000000000000'); }catch(e){ console.warn('delete alertes:',e); }
+              }
+              const saisons=[...new Set(state.results.map(r=>r.saison).filter(Boolean))];
+              for(const s of saisons){
+                await _triggerAlertesForResults(state.results.filter(r=>r.saison===s),true).catch(console.warn);
+              }
+              state.alertesList=null;
+              await loadAlertes(true);
+              toast('Recalcul termine','success');
+            }catch(e){
+              toast('Erreur: '+e.message,'error');
+            }finally{
+              btn.disabled=false;btn.textContent='⚡ Recalculer';
+            }
+          })()">
+          ⚡ Recalculer
+        </button>
+      </div>
+    </div>`;
+
+  // ── Liste vide ───────────────────────────────────────────────────────
+  if (!pageAlertes.length) {
+    return headerHtml + `
+      <div style="text-align:center;padding:40px;background:var(--c-surface2);border-radius:12px;color:var(--c-text3)">
+        <div style="font-size:32px;margin-bottom:10px">✅</div>
+        <strong>${filter==='unread'?'Aucune alerte non lue':'Aucune alerte'}</strong><br>
+        <span style="font-size:13px">
+          ${filter==='unread'?'Toutes les alertes ont été lues.':'Les alertes apparaîtront ici après le prochain import de données.'}
+        </span>
+      </div>`;
+  }
+
+  // ── Cartes alertes ───────────────────────────────────────────────────
+  const TYPE_LABELS = {
+    baisse_total:     { icon:'📉', label:'Baisse du total',   color:'#c62828' },
+    baisse_agres:     { icon:'⬇️', label:'Baisse sur agrès',  color:'#e65100' },
+    baisse_constance: { icon:'📊', label:'Constance en baisse',color:'#c97c00' },
+  };
+
+  const cardsHtml = pageAlertes.map(a => {
+    const t       = TYPE_LABELS[a.type_alerte] || { icon:'🔔', label:a.type_alerte, color:'#888' };
+    const dateStr = a.created_at ? new Date(a.created_at).toLocaleDateString('fr-FR',
+      {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '—';
+    const perte   = a.perte ? `-${a.perte.toFixed(2)} pts` : '';
+    const agresLabel = a.agres ? ` sur ${a.agres}` : ' sur le total';
+    return `
+      <div onclick="!${a.lu}&&markAlerteLue('${a.id}')"
+        style="display:flex;gap:14px;padding:14px 16px;border-radius:10px;
+               border-left:4px solid ${t.color};
+               background:${a.lu?'var(--c-surface2)':'var(--c-surface)'};
+               opacity:${a.lu?.75:1};cursor:${a.lu?'default':'pointer'};
+               border-bottom:1px solid var(--c-border);
+               transition:opacity .15s"
+        title="${a.lu?'':'Cliquer pour marquer comme lu'}">
+        <!-- Icône + badge lu -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:36px">
+          <span style="font-size:22px">${t.icon}</span>
+          ${!a.lu ? `<span style="font-size:9px;background:var(--c-blue);color:#fff;
+            padding:1px 6px;border-radius:8px;font-weight:700;white-space:nowrap">Nouveau</span>` :
+            `<span style="font-size:9px;color:var(--c-text3)">Lu</span>`}
+        </div>
+        <!-- Contenu -->
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            <span style="font-size:14px;font-weight:800;color:var(--c-text)">${a.gymnaste_prenom} ${a.gymnaste_nom}</span>
+            <span style="font-size:11px;background:var(--c-surface2);padding:1px 7px;border-radius:8px">${a.categorie||''}</span>
+            <span style="font-size:11px;color:var(--c-text3)">${a.club||''}</span>
+          </div>
+          <div style="font-size:12px;color:${t.color};font-weight:700;margin-bottom:4px">
+            ${t.label}${agresLabel}
+            ${perte ? `<span style="margin-left:8px;background:${t.color};color:#fff;
+              padding:1px 7px;border-radius:8px;font-size:11px">${perte}</span>` : ''}
+          </div>
+          <div style="font-size:12px;color:var(--c-text2);line-height:1.4">${a.message||''}</div>
+          ${a.valeur_avant !== null ? `
+          <div style="margin-top:6px;display:flex;gap:10px;font-size:11px;color:var(--c-text3)">
+            <span>Avant : <strong>${(a.valeur_avant||0).toFixed(2)}</strong></span>
+            <span>→</span>
+            <span style="color:${t.color}">Après : <strong>${(a.valeur_apres||0).toFixed(2)}</strong></span>
+          </div>` : ''}
+        </div>
+        <!-- Date + actions -->
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;white-space:nowrap;min-width:90px">
+          <span style="font-size:10px;color:var(--c-text3)">${dateStr}</span>
+          ${!a.lu ? `<button onclick="event.stopPropagation();markAlerteLue('${a.id}')"
+            class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 7px">✓ Lu</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  // ── Pagination ───────────────────────────────────────────────────────
+  const paginationHtml = totalPages > 1 ? `
+    <div style="display:flex;justify-content:center;gap:6px;margin-top:16px">
+      ${page > 1 ? `<button class="btn btn-outline btn-sm" onclick="state.alertesPage=${page-1};renderPage()">← Précédent</button>` : ''}
+      <span style="padding:5px 12px;font-size:12px;color:var(--c-text3)">Page ${page} / ${totalPages}</span>
+      ${page < totalPages ? `<button class="btn btn-outline btn-sm" onclick="state.alertesPage=${page+1};renderPage()">Suivant →</button>` : ''}
+    </div>` : '';
+
+  return `${headerHtml}
+    <div style="display:flex;flex-direction:column;gap:0;border:1px solid var(--c-border);border-radius:10px;overflow:hidden">
+      ${cardsHtml}
+    </div>
+    ${paginationHtml}`;
+}
+
+/**
+ * Point de convergence post-import : extrait les saisons/dates des résultats
+ * importés et appelle detectAndStoreAlertes pour chacune.
+ * Simplifie les hooks d'import : appeler avec les résultats bruts.
+ * @param {object[]} results  - résultats importés (individus)
+ * @param {boolean}  silent   - true = pas de toast
+ */
+async function _triggerAlertesForResults(results, silent = false) {
+  if (!_supabase || !results?.length) return;
+  // Regrouper par saison
+  const saisonMap = new Map();
+  results.forEach(r => {
+    if (!r.saison || !r.date) return;
+    if (!saisonMap.has(r.saison)) saisonMap.set(r.saison, new Set());
+    saisonMap.get(r.saison).add(r.date);
+  });
+  if (!saisonMap.size) return;
+  for (const [saison, dates] of saisonMap) {
+    await detectAndStoreAlertes(saison, {
+      newDates: [...dates].sort(),
+      silent,
+    }).catch(console.warn);
+  }
+}
+
+async function detectAndStoreAlertes(saison, opts = {}) {
+  if (!_supabase) {
+    console.log('[Alertes] Supabase non disponible — détection ignorée');
+    return;
+  }
+
+  const { newDates = [], silent = false } = opts;
+
+  // ── 1. Charger les profils coach (club + catégories) ─────────────────
+  let coachProfiles = [];
+  try {
+    const { data, error } = await _supabase
+      .from('profiles')
+      .select('id, club, categories')
+      .eq('role', 'coach');
+    if (error) throw error;
+    coachProfiles = (data || []).filter(p => p.club && p.categories?.length);
+  } catch(e) {
+    console.warn('[Alertes] Chargement profils coach:', e.message);
+    return;
+  }
+
+  if (!coachProfiles.length) {
+    console.log('[Alertes] Aucun profil coach configuré (club+catégories) — pas d\'alertes');
+    return;
+  }
+
+  // ── 2. Identifier les dernières dates importées par saison + club ────
+  const saisonResults = state.results.filter(r => r.saison === saison);
+  if (!saisonResults.length) return;
+
+  // Toutes les dates distinctes de cette saison, triées DESC
+  const allDates = [...new Set(saisonResults.map(r => r.date))].sort();
+  // La/les dernière(s) date(s) importée(s) (newDates si fourni, sinon la dernière)
+  const targetDates = newDates.length
+    ? newDates.filter(d => allDates.includes(d))
+    : [allDates[allDates.length - 1]];
+
+  if (!targetDates.length) return;
+
+  const newAlerts = [];
+
+  // ── 3. Pour chaque coach, analyser ses gymnastes ─────────────────────
+  for (const coach of coachProfiles) {
+    const clubNorm = normalizeClub(coach.club);
+    const coachCats = coach.categories || [];
+
+    // Gymnastes du coach sur cette saison
+    const coachResults = saisonResults.filter(r =>
+      normalizeClub(r.club) === clubNorm && coachCats.includes(r.categorie)
+    );
+    if (!coachResults.length) continue;
+
+    // Regrouper par gymnaste
+    const gymnsMap = new Map();
+    coachResults.forEach(r => {
+      const k = `${r.nom}|${r.prenom}`;
+      if (!gymnsMap.has(k)) gymnsMap.set(k, { nom: r.nom, prenom: r.prenom, club: r.club, categorie: r.categorie, results: [] });
+      gymnsMap.get(k).results.push(r);
+    });
+
+    for (const [, gymn] of gymnsMap) {
+      const sortedResults = gymn.results.sort((a, b) => a.date.localeCompare(b.date));
+
+      for (const targetDate of targetDates) {
+        // Résultats de la dernière compétition
+        const lastComps = sortedResults.filter(r => r.date === targetDate);
+        if (!lastComps.length) continue;
+
+        // Résultats précédents (avant cette date)
+        const prevResults = sortedResults.filter(r => r.date < targetDate && r.total > 0);
+        if (!prevResults.length) continue; // pas d'historique = pas d'alerte
+
+        const lastComp = lastComps[0];  // un résultat par gymnaste par compétition
+
+        // ── Alerte : baisse du total ─────────────────────────────────
+        if (lastComp.total > 0) {
+          const prevTotals = prevResults.map(r => r.total).filter(v => v > 0);
+          const prevAvgTotal = prevTotals.reduce((s, v) => s + v, 0) / prevTotals.length;
+          const perte = prevAvgTotal - lastComp.total;
+
+          if (perte >= ALERTE_SEUILS.baisse_total) {
+            newAlerts.push({
+              saison,
+              coach_id:       coach.id,
+              gymnaste_nom:   gymn.nom,
+              gymnaste_prenom: gymn.prenom,
+              club:           gymn.club,
+              categorie:      gymn.categorie,
+              type_alerte:    'baisse_total',
+              agres:          null,
+              valeur_avant:   Math.round(prevAvgTotal * 1000) / 1000,
+              valeur_apres:   Math.round(lastComp.total * 1000) / 1000,
+              perte:          Math.round(perte * 1000) / 1000,
+              message:        `${gymn.prenom} ${gymn.nom} : baisse de ${perte.toFixed(2)} pts sur le total `
+                + `(${prevAvgTotal.toFixed(2)} → ${lastComp.total.toFixed(2)}) — ${lastComp.compNom || targetDate}`,
+              lu:             false,
+            });
+          }
+        }
+
+        // ── Alerte : baisse par agrès ─────────────────────────────────
+        for (const ag of AGRES) {
+          const lastVal = lastComp.agres?.[ag.code]?.final || 0;
+          if (!lastVal) continue;
+
+          const prevVals = prevResults
+            .map(r => r.agres?.[ag.code]?.final || 0).filter(v => v > 0);
+          if (!prevVals.length) continue;
+
+          const prevAvg = prevVals.reduce((s, v) => s + v, 0) / prevVals.length;
+          const perte = prevAvg - lastVal;
+
+          if (perte >= ALERTE_SEUILS.baisse_agres) {
+            newAlerts.push({
+              saison,
+              coach_id:       coach.id,
+              gymnaste_nom:   gymn.nom,
+              gymnaste_prenom: gymn.prenom,
+              club:           gymn.club,
+              categorie:      gymn.categorie,
+              type_alerte:    'baisse_agres',
+              agres:          ag.code,
+              valeur_avant:   Math.round(prevAvg * 1000) / 1000,
+              valeur_apres:   Math.round(lastVal * 1000) / 1000,
+              perte:          Math.round(perte * 1000) / 1000,
+              message:        `${gymn.prenom} ${gymn.nom} (${ag.label}) : baisse de ${perte.toFixed(2)} pts `
+                + `(${prevAvg.toFixed(2)} → ${lastVal.toFixed(2)}) — ${lastComp.compNom || targetDate}`,
+              lu:             false,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  if (!newAlerts.length) {
+    console.log('[Alertes] Aucune baisse détectée pour cette import');
+    return;
+  }
+
+  // ── 4. Insert des alertes avec ignoreDuplicates ─────────────────────
+  // On utilise insert + ignoreDuplicates:true pour éviter le problème de
+  // contrainte UNIQUE sur colonnes nullables (agres peut être null).
+  // Les alertes déjà existantes sont silencieusement ignorées.
+  try {
+    const BATCH = 50;
+    let inserted = 0;
+    for (let i = 0; i < newAlerts.length; i += BATCH) {
+      const batch = newAlerts.slice(i, i + BATCH);
+      const { data, error } = await _supabase
+        .from('alertes')
+        .insert(batch, { defaultToNull: true, ignoreDuplicates: true })
+        .select('id');  // select pour savoir combien ont été insérées
+
+      if (error) {
+        if (error.code === '42P01') {
+          console.warn('[Alertes] Table alertes introuvable — exécutez le SQL de création v2.4.0');
+          return;
+        }
+        // Erreur 23505 = violation unique → normal si alerte déjà existante, on ignore
+        if (error.code === '23505') {
+          console.log('[Alertes] Doublons ignorés (constraint unique OK)');
+          continue;
+        }
+        console.error('[Alertes] Erreur insert batch:', error.code, error.message);
+        throw error;
+      }
+      inserted += (data?.length || batch.length);
+    }
+    console.log(`[Alertes] ${inserted} nouvelle(s) alerte(s) insérée(s) (${newAlerts.length} détectées)`);
+    if (!silent && inserted > 0) {
+      toast(`🔔 ${inserted} alerte${inserted > 1 ? 's' : ''} générée${inserted > 1 ? 's' : ''} pour les coachs`, 'info');
+    }
+    // Recharger le badge sidebar si on est coach/admin
+    if (_supaRole === 'coach' || _supaRole === 'admin') {
+      state.alertesList = null;
+      loadAlertes().catch(console.warn);
+    }
+  } catch(e) {
+    console.error('[Alertes] Erreur stockage:', e.code, e.message);
+  }
+}
 
 async function saveToSupabase(saison, opts = {}) {
   if (!_supabase || !_supaUser) return false;
