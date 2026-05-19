@@ -2019,12 +2019,7 @@ function showLoading(msg = 'Chargement…') {
       <h3>${msg}</h3>
     </div>`;
 }
-// Spinner CSS — injecté une seule fois
-(function injectSpinnerCSS() {
-  const s = document.createElement('style');
-  s.textContent = '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
-  document.head.appendChild(s);
-})();
+
 
 // Wrapper async pour les opérations lourdes avec indicateur
 function withLoading(msg, fn) {
@@ -2199,8 +2194,12 @@ let state = {
   detailFilterClub: '',
   detailSearch: '',
   detailPoolPage: 1,     // page courante dans la grille de sélection gymnastes
-  homeViewMode:   'auto', // 'auto'|'coach' — switch admin (auto = rôle par défaut)
-  homeCoachCat:   '',     // catégorie filtrée dans "Mon Club" ('' = toutes)
+  homeViewMode:    'auto', // 'auto'|'coach' — switch admin
+  homeCoachCat:    '',     // catégorie filtrée dans "Mon Club" ('' = toutes)
+  adminFavClub:    null,   // null=pas chargé, ''=aucun, string=club favori admin
+  adminFavCats:    null,   // null=pas chargé, []=aucune, [...]=catégories favorites
+  adminSelClub:    '',     // club sélectionné dynamiquement par l'admin sur la home
+  adminSelCat:     '',     // catégorie sélectionnée dynamiquement par l'admin sur la home
 
   // ── Profils Coach (admin) ────────────────────────────────────────────
   coachProfiles:    null,   // null=pas chargé, Map<id,{email,club,categories}>
@@ -3923,6 +3922,7 @@ function _keyAnalyses() {
     s.seSaison || '', s.seGroupe || '', s.seClub || '', s.seNiveau || '', (s.seGymns ?? []).join(','), s.seSearch || '',
     s.coachSelClub ?? '', s.coachCatSearch || '', s.coachCatGroup || '',
     s.homeViewMode || 'auto', s.homeCoachCat || '',
+    s.adminFavClub ?? 'null', s.adminSelClub || '', s.adminSelCat || '',
     s.coachProfile == null ? 'null' : (s.coachProfile.club||'')+'|'+(s.coachProfile.categories?.length??0)+'|'+(s.coachProfile._missingCols?'mc':'ok'),
     s.alertesFilter || '', s.alertesPage || 1, s.alertesAdminCoach || '',
     s.alertesList == null ? 'null' : s.alertesList.length,
@@ -3979,7 +3979,8 @@ function _chartDataSig() {
     s.filterSaison || '', s.filterCat || '', s.filterGroupe || '',
     s.activeAgres  || '',
     s.homeFilterSaison   || '', s.homeFilterCategory || '',  // filtres accueil
-    s.homeViewMode || 'auto', s.homeCoachCat || '',  // vue accueil (coach/globale)
+    s.homeViewMode || 'auto', s.homeCoachCat || '',
+    s.adminFavClub ?? 'null', s.adminSelClub || '', s.adminSelCat || '',  // vue accueil (coach/globale)
     // Fiche gymnaste
     s.currentGroupe || '',
     s.currentGymnaste ? (s.currentGymnaste.nom + '|' + s.currentGymnaste.prenom) : '',
@@ -4108,6 +4109,56 @@ function renderPage() {
 /* =========================================================
    PAGE: HOME
 ========================================================= */
+// ═══════════════════════════════════════════════════════════════════════
+// VUE COACH FAVORITE (Admin) — v2.5.6
+// ═══════════════════════════════════════════════════════════════════════
+
+async function loadAdminFavProfile(forceReload = false) {
+  if (!_supabase || !_supaUser || _supaRole !== 'admin') {
+    state.adminFavClub = ''; state.adminFavCats = [];
+    renderPage(); return;
+  }
+  if (state.adminFavClub !== null && !forceReload) return;
+  try {
+    const { data, error } = await _supabase
+      .from('profiles')
+      .select('club, categories, favorite_club, favorite_categories')
+      .eq('id', _supaUser.id)
+      .maybeSingle();
+    // Pas d'erreur bloquante : colonnes absentes → fallback silencieux
+    state.adminFavClub  = data?.favorite_club  || '';
+    state.adminFavCats  = data?.favorite_categories || [];
+    if (!state.adminSelClub && state.adminFavClub) state.adminSelClub = state.adminFavClub;
+  } catch(e) {
+    console.warn('[AdminFav]', e.message);
+    state.adminFavClub = ''; // CRITIQUE : sortir de null pour stopper la boucle
+    state.adminFavCats = [];
+  } finally { renderPage(); }
+}
+
+async function saveAdminFavProfile(club, cats) {
+  if (!_supabase || !_supaUser) { toast('Non connecté', 'error'); return; }
+  const btn = document.getElementById('admin-fav-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enregistrement…'; }
+  try {
+    const { error } = await _supabase.from('profiles')
+      .update({ favorite_club: club || null, favorite_categories: cats.length ? cats : null })
+      .eq('id', _supaUser.id);
+    if (error) throw error;
+    state.adminFavClub = club;
+    state.adminFavCats = cats;
+    if (club) state.adminSelClub = club;
+    toast(`✅ Vue Coach favorite : ${club || '(aucun)'} · ${cats.length} catégorie${cats.length>1?'s':''}`, 'success');
+    state.adminFavClub = null; // force reload
+    await loadAdminFavProfile(true);
+  } catch(e) {
+    toast('❌ ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Enregistrer'; }
+  }
+}
+
+
 function renderHome() {
   const total  = state.results.length;
   const gymns  = uniqueGymnastes(state.results).length;
@@ -4323,13 +4374,45 @@ function renderHome() {
   // ── Mode coach : vue personnalisée ─────────────────────────────────────
   const isCoachView = _supaRole === 'coach' || (_supaRole === 'admin' && state.homeViewMode === 'coach');
 
-  // Déclencher le chargement du profil coach si nécessaire (async → re-render auto)
-  if (isCoachView && state.coachProfile === null && _supabase && _supaUser) {
-    loadCoachProfile(); // async, appellera renderPage() dans son finally
+  // Charger le profil coach (pour les coachs)
+  if (_supaRole === 'coach' && state.coachProfile === null && _supabase && _supaUser) {
+    loadCoachProfile();
+  }
+  // Charger les préférences admin (pour les admins en vue coach)
+  if (_supaRole === 'admin' && isCoachView && state.adminFavClub === null && _supabase && _supaUser) {
+    loadAdminFavProfile();
   }
 
-  const coachProfile = state.coachProfile;
-  const coachClub    = coachProfile?.club || null;
+  const coachProfile = _supaRole === 'coach' ? state.coachProfile : null;
+  const coachClub    = _supaRole === 'coach' ? (coachProfile?.club || null) : null;
+
+  // Pour l'admin en vue coach : club = sélecteur dynamique > club favori
+  const adminClub    = _supaRole === 'admin' && isCoachView
+    ? (state.adminSelClub || state.adminFavClub || null)
+    : null;
+  // Catégories admin : si une catégorie est sélectionnée → la forcer, sinon favoris
+  const adminCats    = _supaRole === 'admin' && isCoachView && adminClub
+    ? (state.adminSelCat ? [state.adminSelCat] : (state.adminFavCats || []))
+    : [];
+  const effectiveClub = _supaRole === 'coach' ? coachClub : adminClub;
+  const effectiveCats = _supaRole === 'coach' ? (coachProfile?.categories || []) : adminCats;
+
+  // Catégories disponibles pour le club admin sélectionné
+  const adminClubCats = adminClub
+    ? [...new Set(state.results.filter(r => normalizeClub(r.club) === normalizeClub(adminClub))
+        .map(r => r.categorie).filter(Boolean))].sort()
+    : [];
+  // Auto-sélectionner la première catégorie si adminSelCat est vide et qu'un club est choisi
+  if (_supaRole === 'admin' && isCoachView && adminClub && !state.adminSelCat && adminClubCats.length) {
+    state.adminSelCat = state.adminFavCats?.[0] && adminClubCats.includes(state.adminFavCats[0])
+      ? state.adminFavCats[0]
+      : adminClubCats[0];
+  }
+  // Réinitialiser adminSelCat si elle n'existe pas dans le nouveau club
+  if (_supaRole === 'admin' && state.adminSelCat && adminClubCats.length
+      && !adminClubCats.includes(state.adminSelCat)) {
+    state.adminSelCat = adminClubCats[0] || '';
+  }
 
   // Section alertes pour coach
   let alertesBannerHtml = '';
@@ -4359,20 +4442,22 @@ function renderHome() {
 
   // Section "Mon Club" pour coach
   let monClubHtml = '';
-  if (isCoachView && state.coachProfile === null) {
-    // Profil en cours de chargement — placeholder discret
+  // Spinner seulement si les données ne sont pas encore disponibles
+  const isLoading = (_supaRole === 'coach' && state.coachProfile === null)
+                 || (_supaRole === 'admin' && isCoachView && state.adminFavClub === null);
+  if (isCoachView && isLoading) {
     monClubHtml = `
       <div style="padding:12px 18px;border-radius:10px;background:var(--c-surface2);
                   border:1px solid var(--c-border);margin-bottom:16px;
                   font-size:12px;color:var(--c-text3);display:flex;align-items:center;gap:10px">
         <span style="animation:spin 1s linear infinite;display:inline-block">⏳</span>
-        Chargement du profil coach…
+        Chargement du profil…
       </div>`;
-  } else if (isCoachView && coachClub) {
-    const clubNorm  = normalizeClub(coachClub);
+  } else if (isCoachView && effectiveClub) {
+    const clubNorm  = normalizeClub(effectiveClub);
     const clubResults = resFiltered.filter(r => normalizeClub(r.club) === clubNorm);
-    const coachCats = coachProfile?.categories || [];
-    const selCatClub = state.homeCoachCat || ''; // '' = toutes les catégories du coach
+    const coachCats = effectiveCats;
+    const selCatClub = state.homeCoachCat || ''; // '' = toutes les catégories
 
     // Calcul des stats pour une liste de résultats donnée
     function _statsForResults(rList) {
@@ -4431,12 +4516,48 @@ function renderHome() {
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">
           <span>🏟</span>
-          <h2>${coachClub}${selCatClub ? ` <span style="font-size:13px;font-weight:500;color:var(--c-text3)">— ${selCatClub}</span>` : ''}</h2>
+          <h2>${effectiveClub}${selCatClub ? ` <span style="font-size:13px;font-weight:500;color:var(--c-text3)">— ${selCatClub}</span>` : ''}</h2>
           <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
             ${catDropdown}
             <span style="font-size:12px;color:var(--c-text3)">${selSaison}</span>
           </div>
         </div>
+        ${_supaRole === 'admin' ? `
+        <div style="padding:8px 20px;background:rgba(0,63,138,.06);border-bottom:1px solid var(--c-border);
+                    display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:11px;font-weight:700;color:var(--c-blue);background:rgba(0,63,138,.12);
+                padding:2px 9px;border-radius:12px;white-space:nowrap">👁 Vue Coach simulée</span>
+
+          <!-- Sélecteur Club -->
+          <select style="font-size:12px;padding:4px 8px;border-radius:7px;border:1.5px solid var(--c-blue);
+                         background:var(--c-surface);color:var(--c-text);font-weight:600"
+            onchange="state.adminSelClub=this.value;state.adminSelCat='';state.homeCoachCat='';renderPage()">
+            <option value="">— Choisir un club —</option>
+            ${[...new Set(state.results.map(r=>normalizeClub(r.club)).filter(Boolean))].sort()
+              .map(c=>`<option value="${c}" ${c===effectiveClub?'selected':''}>${c}</option>`).join('')}
+          </select>
+
+          <!-- Sélecteur Catégorie (dynamique selon le club) -->
+          ${adminClub && adminClubCats.length ? `
+          <select style="font-size:12px;padding:4px 8px;border-radius:7px;border:1.5px solid var(--c-blue);
+                         background:var(--c-surface);color:var(--c-text);font-weight:600"
+            onchange="state.adminSelCat=this.value;state.homeCoachCat='';renderPage()">
+            ${adminClubCats.map(c=>`<option value="${c}" ${c===state.adminSelCat?'selected':''}>${c}</option>`).join('')}
+          </select>` : ''}
+
+          <!-- Bouton Club favori -->
+          ${state.adminFavClub && state.adminFavClub !== effectiveClub ? `
+          <button class="btn btn-outline btn-sm" style="font-size:11px;border-color:var(--c-blue);color:var(--c-blue)"
+            onclick="state.adminSelClub=state.adminFavClub;state.adminSelCat='';state.homeCoachCat='';renderPage()"
+            title="Revenir au club favori : ${state.adminFavClub}">
+            ⭐ Club favori
+          </button>` : ''}
+
+          <button class="btn btn-outline btn-sm" style="font-size:11px;margin-left:auto"
+            onclick="navigate('gestion_users')" title="Modifier le profil coach dans Gestion utilisateurs">
+            ⚙️ Profil
+          </button>
+        </div>` : ''}
         <div class="card-body" style="padding:16px 20px">
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
             <div class="stat-card blue" style="margin:0;text-align:center">
@@ -4467,16 +4588,19 @@ function renderHome() {
           </div>` : `<p style="font-size:12px;color:var(--c-text3)">Aucune donnée pour ce club${selCatClub?' en '+selCatClub:''} cette saison.</p>`}
         </div>
       </div>`;
-  } else if (isCoachView && coachProfile !== null && !coachClub) {
+  } else if (isCoachView && !effectiveClub) {
     // Admin en Vue Coach sans profil club → message informatif (pas d'erreur)
     if (_supaRole === 'admin') {
       monClubHtml = `
-        <div style="padding:12px 16px;border-radius:10px;background:var(--c-surface2);
-                    border:1px solid var(--c-border);margin-bottom:16px;
-                    font-size:12px;color:var(--c-text3)">
-          <strong style="color:var(--c-text2)">ℹ️ Vue Coach (Admin)</strong> —
-          La section "Mon Club" est visible pour les coachs ayant configuré leur club et catégories dans
-          <a onclick="navigate('params_coach')" style="color:var(--c-blue);cursor:pointer">Paramètres Coach</a>.
+        <div style="padding:14px 18px;border-radius:10px;background:var(--c-surface2);
+                    border:1.5px solid var(--c-blue);margin-bottom:16px">
+          <div style="font-size:13px;font-weight:700;color:var(--c-blue);margin-bottom:6px">👁 Vue Coach simulée</div>
+          <div style="font-size:12px;color:var(--c-text2);margin-bottom:10px">
+            Configurez votre club et catégories favoris pour afficher la section "Mon Club" ici.
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="navigate('gestion_users')" style="font-size:12px">
+            ⚙️ Configurer la Vue Coach favorite
+          </button>
         </div>`;
     } else {
       // Coach sans profil configuré
@@ -9620,7 +9744,6 @@ async function saveCoachProfile(club, categories) {
     const clubVal = (club || '').trim() || null;
     const catsVal = Array.isArray(categories) && categories.length ? categories : null;
 
-    console.log('[Coach] Sauvegarde profil:', { clubVal, catsVal });
 
     const { error } = await _supabase
       .from('profiles')
@@ -9809,8 +9932,7 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS categories text[];</pre>
               const {data,error}=await _supabase.from('profiles').select('club,categories').eq('id',_supaUser.id).maybeSingle();
               if(error){toast('Erreur: '+error.message,'error');return;}
               const msg=data?'Club: '+(data.club||'(vide)')+' · Catégories: '+(data.categories?.length||0)+' cat.':'Aucun profil trouvé';
-              console.log('[Coach] Profil Supabase:',data);
-              toast('🔍 '+msg,'info');
+                        toast('🔍 '+msg,'info');
             })()">
             🔍 Vérifier
           </button>
@@ -12545,7 +12667,39 @@ function showAbout() {
 
         ${[
           {
-            ver: '2.5.5', date: '18 mai 2026', current: true,
+            ver: '2.5.8', date: '19 mai 2026', current: true,
+            items: [
+              'Nettoyage code mort : suppression _getAvgBeforeDate, _stdDev (jamais appelées), canAdmin, requireWrite, injectSpinnerCSS, toggleCompare',
+              'Suppression renderAdminCoachFav + _initAdminFavIfNeeded + admin_coach_fav (page orpheline après retrait sidebar)',
+              'Suppression adminSelCatSearch + adminSelCatGroup du state (liés à la page supprimée)',
+              'Suppression des console.log de debug (AdminFav, Coach, CoachProfiles)',
+              'Passage en version v2.5.8',
+            ]
+          },
+          {
+            ver: '2.5.7', date: '19 mai 2026', current: false,
+            items: [
+              'Vue Coach admin : sélecteur de catégorie dynamique (selon le club sélectionné) dans le bandeau "Vue Coach simulée"',
+              'Auto-sélection de la 1ère catégorie du club si adminSelCat est vide',
+              'Bouton "⭐ Club favori" pour revenir au club configuré dans le profil admin',
+              'adminSelCat dans state + _keyAnalyses pour re-render instantané',
+              'Suppression de l\'entrée "Vue Coach favorite" dans la sidebar (doublon avec Gestion utilisateurs)',
+              'Passage en version v2.5.7',
+            ]
+          },
+          {
+            ver: '2.5.6', date: '18 mai 2026', current: false,
+            items: [
+              '🆕 Vue Coach favorite (Admin) : page dédiée "👁 Vue Coach favorite" en sidebar pour configurer club + catégories favoris',
+              'Page Accueil admin en mode Vue Coach : section "Mon Club" avec badge "Vue Coach simulée" + sélecteur de club dynamique',
+              'L\'admin peut simuler n\'importe quel club, revenir au club favori, ou accéder à la configuration',
+              'loadAdminFavProfile() / saveAdminFavProfile() : persistent favorite_club + favorite_categories dans profiles',
+              'SQL requis : ALTER TABLE profiles ADD COLUMN IF NOT EXISTS favorite_club text; ADD COLUMN IF NOT EXISTS favorite_categories text[];',
+              'Passage en version v2.5.6',
+            ]
+          },
+          {
+            ver: '2.5.5', date: '18 mai 2026', current: false,
             items: [
               'Section Mon Club : Top 3 → Top 6 gymnastes (titre dynamique selon le nombre disponible)',
               'Passage en version v2.5.5',
@@ -13813,17 +13967,17 @@ function renderUsersTable(users) {
       <td style="font-size:11px;color:var(--c-text2)">${fmt(u.created_at)}</td>
       <td style="font-size:11px;color:var(--c-text3)">${fmtTime(u.last_sign)}</td>
       <td style="font-size:11px;color:var(--c-text3);max-width:120px">
-        ${roleVal==='coach' ? (u.club || '<span style="color:var(--c-text3);font-style:italic">—</span>') : ''}
+        ${(roleVal==='coach'||roleVal==='admin') ? (u.club || '<span style="color:var(--c-text3);font-style:italic">—</span>') : ''}
       </td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="resetUserPassword('${emailSafe}')"
           title="Envoyer un email de réinitialisation">📧 Reset MDP</button>
-        ${roleVal==='coach' ? `<button class="btn btn-outline btn-sm" style="margin-left:4px"
+        ${(roleVal==='coach'||roleVal==='admin') ? `<button class="btn btn-outline btn-sm" style="margin-left:4px"
           onclick="toggleCoachProfileAdmin('${u.id}')"
           title="Modifier le profil coach (club + catégories)">⚙️</button>` : ''}
       </td>
     </tr>
-    ${roleVal==='coach' ? `<tr id="coach-admin-row-${u.id}" style="display:none">
+    ${(roleVal==='coach'||roleVal==='admin') ? `<tr id="coach-admin-row-${u.id}" style="display:none">
       <td colspan="7" style="background:var(--c-surface2);padding:14px 18px">
         <!-- Panneau édition profil coach — id panel pour cibler les contrôles -->
         <div id="coach-panel-${u.id}">
@@ -13951,10 +14105,11 @@ async function loadUsersList() {
       console.warn('[Users] RPC indisponible:', rpcErr?.message);
       if (sqlHint) sqlHint.style.display = 'block';
       const { data, error } = await _supabase.from('profiles')
-        .select('id,email,role,created_at').order('created_at', { ascending: false });
+        .select('id,email,role,club,categories,created_at').order('created_at', { ascending: false });
       if (error) throw error;
       users = (data || []).map(p => ({
         id: p.id, email: p.email, role: p.role || 'lecteur',
+        club: p.club || '', categories: p.categories || [],
         created_at: p.created_at, last_sign: null,
       }));
     }
@@ -13967,6 +14122,32 @@ async function loadUsersList() {
           <h3>Aucun utilisateur trouvé</h3></div>`;
       return;
     }
+
+    // Enrichir avec club/categories (la RPC ne les retourne pas)
+    try {
+      const ids = users.map(u => u.id).filter(Boolean);
+      if (ids.length) {
+        const { data: profData } = await _supabase
+          .from('profiles')
+          .select('id, role, club, categories, favorite_club, favorite_categories')
+          .in('id', ids);
+        if (profData) {
+          const profMap = Object.fromEntries(profData.map(p => [p.id, p]));
+          users = users.map(u => {
+            const p = profMap[u.id];
+            if (!p) return u;
+            // Pour les admins : utiliser favorite_club/favorite_categories
+            // Pour les coachs : utiliser club/categories
+            const isAdm = (p.role || u.role) === 'admin';
+            return {
+              ...u,
+              club:       (isAdm ? p.favorite_club       : p.club)       || '',
+              categories: (isAdm ? p.favorite_categories : p.categories) || [],
+            };
+          });
+        }
+      }
+    } catch(e) { console.warn('[Users] enrichissement profiles:', e.message); }
 
     // Initialiser le tri et afficher
     _usersSortCol = 'email'; _usersSortDir = 'asc';
@@ -13995,13 +14176,18 @@ async function saveCoachProfileAdmin(userId, email, role) {
   const clubVal = (club || '').trim() || null;
   const catsVal = cats.length ? cats : null;
 
-  console.log('[Admin] Sauvegarde profil coach', userId, { clubVal, catsVal });
+  // Si l'utilisateur édité est l'admin lui-même → sauvegarder dans favorite_club aussi
+  const isEditingSelf = _supaUser && userId === _supaUser.id;
+  const updatePayload = isEditingSelf
+    ? { club: clubVal, categories: catsVal, favorite_club: clubVal, favorite_categories: catsVal }
+    : { club: clubVal, categories: catsVal };
+
+  console.log('[Admin] Sauvegarde profil', userId, updatePayload);
 
   try {
-    // UPDATE ciblé : ne touche que club + categories, préserve le reste
     const { error } = await _supabase
       .from('profiles')
-      .update({ club: clubVal, categories: catsVal })
+      .update(updatePayload)
       .eq('id', userId);
     if (error) throw error;
     // Mettre à jour le cache local
@@ -14510,6 +14696,7 @@ function _initClubAutocomplete(containerId, allClubs, initialValue, onSelect) {
   };
 }
 
+
 function _initParamsCoachIfNeeded() {
   if (state.currentPage !== 'params_coach') return;
   if (!document.getElementById('coach-cats-grid')) return;
@@ -14537,7 +14724,10 @@ function _initParamsCoachIfNeeded() {
 
 function bindPageEvents() {
   // Initialiser les filtres catégories coach si nécessaire
-  requestAnimationFrame(() => _initParamsCoachIfNeeded());
+  requestAnimationFrame(() => {
+    _initParamsCoachIfNeeded();
+    _initAdminFavIfNeeded();
+  });
 
   // ── Tabs ──────────────────────────────────────────────────
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -14709,15 +14899,7 @@ function buildPagination(totalItems, pageSize, currentPage, onPageFn, labelFn) {
 /* =========================================================
    COMPARE
 ========================================================= */
-function toggleCompare(key, checked) {
-  if (checked && state.compareList.length < 5) state.compareList.push(key);
-  else state.compareList = state.compareList.filter(k=>k!==key);
-  document.querySelectorAll('.compare-check').forEach(el => {
-    const inp = el.querySelector('input');
-    if (inp) el.classList.toggle('selected', inp.checked);
-  });
-  initCompareChart();
-}
+
 
 /* =========================================================
    MODAL
@@ -15451,7 +15633,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remplacer ces deux valeurs par celles de votre projet Supabase ──
 /* ─── Version de l'application ─── */
-const APP_VERSION = '2.5.5';
+const APP_VERSION = '2.5.8';
 
 // Mettre à jour l'affichage de la version dès que le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
@@ -15937,27 +16119,9 @@ const ALERTE_SEUILS = {
   baisse_agres:  0.8,   // perte ≥ 0.8 pt sur un agrès
 };
 
-/**
- * Calcule l'écart-type d'un tableau de valeurs.
- */
-function _stdDev(vals) {
-  if (vals.length < 2) return 0;
-  const m = vals.reduce((s, v) => s + v, 0) / vals.length;
-  return Math.sqrt(vals.reduce((s, v) => s + (v - m) ** 2, 0) / vals.length);
-}
 
-/**
- * Pour une gymnaste + agrès, calcule sa moyenne sur les N dernières compétitions
- * en excluant les dates de la dernière compétition importée.
- */
-function _getAvgBeforeDate(results, nom, prenom, agCode, beforeDate) {
-  const vals = results
-    .filter(r => r.nom === nom && r.prenom === prenom
-      && r.date < beforeDate
-      && (r.agres?.[agCode]?.final || 0) > 0)
-    .map(r => r.agres[agCode].final);
-  return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
-}
+
+
 
 /**
  * Point d'entrée principal : détecte les alertes après un import de données.
@@ -15998,7 +16162,6 @@ async function loadCoachProfiles(forceReload = false) {
         categories: p.categories || [],
       }])
     );
-    console.log(`[CoachProfiles] ${state.coachProfiles.size} coach(s) chargé(s)`);
   } catch(e) {
     console.warn('[CoachProfiles]', e.message);
     state.coachProfiles = new Map(); // Map vide → évite les rechargements en boucle
